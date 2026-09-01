@@ -218,7 +218,7 @@ export function SidebarLayout({
           >
             <PiMark className="mac-sidebar-brand-mark size-8" />
             <span className="text-[15px] font-semibold" data-sidebar-brand>
-              Pi Agent
+              Matrix Agent
             </span>
             <div className="ml-auto flex items-center gap-0.5">
               <button
