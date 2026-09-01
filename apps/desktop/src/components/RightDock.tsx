@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  FileOutput,
   FileText,
   FolderTree,
   GitBranch,
@@ -28,6 +29,7 @@ import {
   type ShellTerminalStatus,
 } from "../features/dock/ShellTerminal";
 import { FilesPanel } from "../features/dock/FilesPanel";
+import { ArtifactsPanel } from "../features/dock/ArtifactsPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TextPreviewPanel } from "../features/dock/TextPreviewPanel";
 import { TreePanel } from "../features/dock/TreePanel";
@@ -42,6 +44,7 @@ export type DockTabId =
   | "files"
   | "tree"
   | "changes"
+  | "artifacts"
   | `browser:${number}`
   | `text:${number}`
   | `shell:${number}`
@@ -313,6 +316,12 @@ export function RightDock() {
     setAddMenuOpen(false);
   };
 
+  const createArtifacts = () => {
+    setTabOrder((current) => (current.includes("artifacts") ? current : [...current, "artifacts"]));
+    setActiveTab("artifacts");
+    setAddMenuOpen(false);
+  };
+
   useEffect(
     () =>
       subscribeTreePanel(() => {
@@ -457,7 +466,7 @@ export function RightDock() {
   };
 
   const closeTab = (tabId: DockTabId) => {
-    if (tabId === "files" || tabId === "tree" || tabId === "changes") {
+    if (tabId === "files" || tabId === "tree" || tabId === "changes" || tabId === "artifacts") {
       closeOrderTab(tabId);
       return;
     }
@@ -480,6 +489,7 @@ export function RightDock() {
     if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
     if (tabId === "tree") return { label: t("dockTree"), Icon: GitBranch };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
+    if (tabId === "artifacts") return { label: t("dockArtifacts"), Icon: FileOutput };
     if (tabId.startsWith("text:")) {
       const id = Number(tabId.slice("text:".length));
       const text = textTabs.find((tab) => tab.id === id);
@@ -789,6 +799,16 @@ export function RightDock() {
                 <button
                   type="button"
                   role="menuitem"
+                  disabled={!workspaceCwd}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                  onClick={createArtifacts}
+                >
+                  <FileOutput size={14} />
+                  {t("dockArtifacts")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
                   disabled={browserTabs.length >= MAX_BROWSER_TABS}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
                   onClick={createBrowser}
@@ -841,6 +861,16 @@ export function RightDock() {
             className={`min-h-0 flex-1 ${activeTab === "changes" ? "flex" : "hidden"}`}
           >
             <ChangesPanel visible={activeTab === "changes" && dockOpen} />
+          </div>
+        )}
+        {tabOrder.includes("artifacts") && (
+          <div
+            role="tabpanel"
+            id="dock-panel-artifacts"
+            aria-labelledby="dock-tab-artifacts"
+            className={`min-h-0 flex-1 ${activeTab === "artifacts" ? "flex" : "hidden"}`}
+          >
+            <ArtifactsPanel />
           </div>
         )}
         {browserTabs.map((tab) => (
@@ -933,6 +963,17 @@ export function RightDock() {
                 >
                   <GitCompareArrows size={17} className="shrink-0" />
                   <span>{t("gitChanges")}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("dockOpenNamed", { label: t("dockArtifacts") })}
+                  title={workspaceCwd ? undefined : t("dockWorkspaceForChanges")}
+                  disabled={!workspaceCwd}
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
+                  onClick={createArtifacts}
+                >
+                  <FileOutput size={17} className="shrink-0" />
+                  <span>{t("dockArtifacts")}</span>
                 </button>
                 <button
                   type="button"

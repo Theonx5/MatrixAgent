@@ -881,6 +881,10 @@ export const en = {
   dockExtensionCloseTimeout:
     "Extension panel could not be closed; use the panel's own exit shortcut",
 
+  // Dock artifacts page
+  dockArtifacts: "Artifacts",
+  dockArtifactsRegion: "Session artifacts",
+  dockArtifactsEmpty: "No md/txt artifacts written by Matrix in this session yet.",
   // Text preview
   dockTextPreview: "Text preview",
   dockTextPreviewRegion: "Preview {name}",

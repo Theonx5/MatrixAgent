@@ -36,6 +36,12 @@ vi.mock("../features/dock/TextPreviewPanel", () => ({
   isPreviewableFileName: (path: string) => /\.(?:md|markdown|txt)$/i.test(path),
 }));
 
+vi.mock("../features/dock/ArtifactsPanel", () => ({
+  ArtifactsPanel: ({ visible }: { visible: boolean }) => (
+    <div data-testid="artifacts-panel" hidden={!visible} />
+  ),
+}));
+
 vi.mock("../features/dock/ChangesPanel", () => ({
   ChangesPanel: ({ visible }: { visible: boolean }) => (
     <div data-testid="changes-panel" hidden={!visible} />
@@ -288,6 +294,8 @@ describe("RightDock pages", () => {
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Artifacts" })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Browser" })).toHaveFocus();
     await user.keyboard("{End}");
     expect(screen.getByRole("menuitem", { name: "Terminal" })).toHaveFocus();
@@ -308,6 +316,24 @@ describe("RightDock pages", () => {
 
     act(() => requestTreePanel());
     expect(screen.getAllByRole("tab", { name: "Tree" })).toHaveLength(1);
+  });
+});
+
+describe("RightDock artifacts page", () => {
+  it("opens Artifacts as a closable singleton page", async () => {
+    const user = userEvent.setup();
+    render(<RightDock />);
+
+    await openAddMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Artifacts" }));
+    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute("aria-selected", "true");
+
+    await openAddMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Artifacts" }));
+    expect(screen.getAllByRole("tab", { name: "Artifacts" })).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Close Artifacts" }));
+    expect(screen.queryByRole("tab", { name: "Artifacts" })).toBeNull();
   });
 });
 

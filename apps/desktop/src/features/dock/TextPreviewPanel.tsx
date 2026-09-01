@@ -8,12 +8,6 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { MarkdownMessage } from "../chat/MarkdownMessage";
 
 const MARKDOWN_EXTENSIONS = /\.(?:md|markdown)$/i;
-const PLAIN_TEXT_EXTENSIONS = /\.(?:txt|log|text)$/i;
-
-/** File-name classifier shared with the Files panel preview affordance. */
-export function isPreviewableFileName(path: string): boolean {
-  return MARKDOWN_EXTENSIONS.test(path) || PLAIN_TEXT_EXTENSIONS.test(path);
-}
 
 function isMarkdownFile(path: string): boolean {
   return MARKDOWN_EXTENSIONS.test(path);

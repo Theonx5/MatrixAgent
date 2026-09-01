@@ -1,5 +1,8 @@
 import { useId, useMemo, type ReactNode } from "react";
-import { ChevronRight, FileCode2, FilePenLine, Terminal, type LucideIcon } from "lucide-react";
+import { ChevronRight, Eye, FileCode2, FilePenLine, Terminal, type LucideIcon } from "lucide-react";
+import { isPreviewableFileName, toWorkspaceRelativePath } from "../../lib/artifacts";
+import { requestDockTextPreview } from "../../lib/dock-text";
+import { useAppStore } from "../../lib/stores/app-store";
 import { sanitizeAgentText } from "./markdown-utils";
 import {
   formatDuration,
@@ -82,17 +85,26 @@ function ToolRow({
   summary,
   props,
   children,
+  previewPath,
 }: {
   icon: LucideIcon;
   label: string;
   summary: string;
   props: ToolCardProps;
   children?: ReactNode;
+  previewPath?: string;
 }) {
   const t = useT();
   const contentId = useId();
   const [open, setOpen] = useToolDisclosure(props);
   const canExpand = children !== undefined;
+  const openPreview = () => {
+    if (!previewPath) return;
+    requestDockTextPreview({
+      path: previewPath,
+      name: previewPath.slice(previewPath.lastIndexOf("/") + 1),
+    });
+  };
 
   return (
     <div className="min-w-0 max-w-full" data-ui="tool-card">
@@ -109,9 +121,37 @@ function ToolRow({
       >
         <Icon size={14} className="shrink-0 text-muted" />
         <span className="shrink-0 text-xs font-medium text-foreground/80">{label}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted" title={summary}>
-          {summary}
-        </span>
+        {previewPath ? (
+          <span
+            role="button"
+            tabIndex={0}
+            className="flex min-w-0 flex-1 items-center gap-1 truncate rounded font-mono text-[11px] text-muted underline decoration-border/60 underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+            title={t("dockFilesPreviewNamed", { path: previewPath })}
+            aria-label={t("dockFilesPreviewNamed", { path: previewPath })}
+            onClick={(event) => {
+              event.stopPropagation();
+              openPreview();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              event.stopPropagation();
+              openPreview();
+            }}
+          >
+            <span className="min-w-0 flex-1 truncate" title={summary}>
+              {summary}
+            </span>
+            <Eye size={11} className="shrink-0" aria-hidden="true" />
+          </span>
+        ) : (
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+            title={summary}
+          >
+            {summary}
+          </span>
+        )}
         <span className="shrink-0 text-[10px] text-muted">
           {formatDuration(props.startedAt, props.endedAt)}
         </span>
@@ -162,6 +202,15 @@ export function isFileMutationTool(name: string): boolean {
   return MUTATION_NAMES.has(normalizedName(name));
 }
 
+/** Workspace-relative preview path for a tool-call file path, or null. */
+function toolCallPreviewPath(rawPath: string): string | null {
+  if (!rawPath) return null;
+  const canonicalCwd = useAppStore.getState().workspace?.canonicalCwd ?? "";
+  if (!canonicalCwd) return null;
+  const path = toWorkspaceRelativePath(rawPath, canonicalCwd);
+  return path && isPreviewableFileName(path) ? path : null;
+}
+
 export function FileReadToolCard(props: ToolCardProps) {
   const t = useT();
   const args = toolRecord(props.args);
@@ -169,11 +218,18 @@ export function FileReadToolCard(props: ToolCardProps) {
   const content = toolResultText(props.result);
   const offset = typeof args?.offset === "number" ? Math.max(1, args.offset) : 1;
   const lines = useMemo(() => content.split("\n").slice(0, 400), [content]);
+  const previewPath = toolCallPreviewPath(path);
 
   if (props.status === "error") return <ToolCard {...props} />;
 
   return (
-    <ToolRow icon={FileCode2} label={t("toolRead")} summary={path || props.name} props={props}>
+    <ToolRow
+      icon={FileCode2}
+      label={t("toolRead")}
+      summary={path || props.name}
+      props={props}
+      previewPath={previewPath ?? undefined}
+    >
       <div className="max-h-72 overflow-auto rounded-md border border-border bg-surface-overlay/35">
         <pre className="min-w-max py-2 font-mono text-[11px] leading-5 text-foreground/80">
           {lines.map((line, index) => (
@@ -275,6 +331,7 @@ export function FileMutationToolCard(props: ToolCardProps) {
   const diff = useMemo(() => mutationDiff(props), [props]);
   const counts = useMemo(() => diffCounts(diff), [diff]);
   const write = normalizedName(props.name).includes("write");
+  const previewPath = toolCallPreviewPath(path);
   if (!path || !diff || props.status === "error") return <ToolCard {...props} />;
 
   return (
@@ -283,6 +340,7 @@ export function FileMutationToolCard(props: ToolCardProps) {
       label={write ? t("toolWrite") : t("toolEdit")}
       summary={path}
       props={props}
+      previewPath={previewPath ?? undefined}
     >
       <div className="overflow-hidden rounded-md border border-border bg-surface-overlay/30">
         <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[10px] text-muted">

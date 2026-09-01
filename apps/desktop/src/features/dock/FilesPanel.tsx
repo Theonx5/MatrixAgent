@@ -23,7 +23,7 @@ import { workspaceContext } from "../../lib/bridge/host-context";
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { requestComposerInsert } from "../../lib/composer-insert";
 import { requestDockTextPreview } from "../../lib/dock-text";
-import { isPreviewableFileName } from "../dock/TextPreviewPanel";
+import { isPreviewableFileName } from "../../lib/artifacts";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 

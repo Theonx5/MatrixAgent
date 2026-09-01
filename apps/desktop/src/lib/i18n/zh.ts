@@ -850,6 +850,10 @@ export const zh: Record<MessageKey, string> = {
   dockWorkspaceForTerminal: "打开工作区后可使用终端",
   dockExtensionCloseTimeout: "扩展面板无法关闭，请使用面板自身的退出快捷键",
 
+  // Dock artifacts page
+  dockArtifacts: "产物",
+  dockArtifactsRegion: "会话产物",
+  dockArtifactsEmpty: "本次会话还没有 Matrix 写入的 md/txt 产物。",
   // Text preview
   dockTextPreview: "文本预览",
   dockTextPreviewRegion: "预览 {name}",
