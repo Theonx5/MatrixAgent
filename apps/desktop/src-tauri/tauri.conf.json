@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PiDeck",
+  "productName": "PaperMatrix",
   "version": "0.2.2",
   "identifier": "com.skitre.pideck",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "PiDeck",
+        "title": "PaperMatrix",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

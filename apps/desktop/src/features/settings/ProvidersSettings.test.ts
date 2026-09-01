@@ -111,7 +111,7 @@ describe("providerDraftForSave", () => {
     baseUrl: "https://relay.example/v1",
     modelsUrl: "",
     api: "openai-completions" as const,
-    headers: { "User-Agent": "PiDeck/0.1" },
+    headers: { "User-Agent": "PaperMatrix/0.1" },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,
@@ -126,7 +126,7 @@ describe("providerDraftForSave", () => {
       baseUrl: "https://relay.example/v1",
       api: "openai-completions",
       authHeader: true,
-      headers: { "User-Agent": "PiDeck/0.1" },
+      headers: { "User-Agent": "PaperMatrix/0.1" },
       models: [],
     });
   });

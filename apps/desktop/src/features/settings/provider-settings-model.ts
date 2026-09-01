@@ -68,7 +68,7 @@ export function emptyProviderDraft(): ProviderDraftState {
     baseUrl: "",
     modelsUrl: "",
     api: "openai-completions",
-    headers: { "User-Agent": "PiDeck/0.1" },
+    headers: { "User-Agent": "PaperMatrix/0.1" },
     compat: {
       supportsDeveloperRole: null,
       supportsReasoningEffort: null,
