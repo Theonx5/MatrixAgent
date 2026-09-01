@@ -4,14 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   MAX_DIRECTORY_WATCHES,
+  MAX_TEXT_FILE_BYTES,
   WorkspaceFileService,
   listWorkspaceDirectory,
   normalizeWorkspaceRelativePath,
+  readWorkspaceTextFile,
 } from "./workspace-files.js";
 
 // Node 24.18.0 predates the Windows fs-event fix in libuv/libuv#5152 and can abort here.
-const hasBrokenWindowsFsWatch =
-  process.platform === "win32" && process.versions.node === "24.18.0";
+const hasBrokenWindowsFsWatch = process.platform === "win32" && process.versions.node === "24.18.0";
 
 let root = "";
 
@@ -87,4 +88,77 @@ describe("WorkspaceFileService", () => {
       service.dispose();
     },
   );
+});
+
+describe("readWorkspaceTextFile", () => {
+  it("returns workspace-relative path and utf8 content", async () => {
+    await writeFile(join(root, "notes.txt"), "# 标题\nhello");
+    await expect(readWorkspaceTextFile(root, "notes.txt")).resolves.toEqual({
+      path: "notes.txt",
+      content: "# 标题\nhello",
+      size: Buffer.byteLength("# 标题\nhello", "utf8"),
+      truncated: false,
+      binary: false,
+    });
+  });
+
+  it("reads nested files through forward-slash separators", async () => {
+    await writeFile(join(root, "src", "nested.md"), "body");
+    await expect(readWorkspaceTextFile(root, "src/nested.md")).resolves.toMatchObject({
+      path: "src/nested.md",
+      content: "body",
+      truncated: false,
+      binary: false,
+    });
+  });
+
+  it("rejects path escapes, directories, and missing files", async () => {
+    await expect(readWorkspaceTextFile(root, "../outside.txt")).rejects.toThrow(/cannot leave/);
+    await expect(readWorkspaceTextFile(root, "src")).rejects.toThrow(/not a file/);
+    await expect(readWorkspaceTextFile(root, "missing.txt")).rejects.toThrow();
+  });
+
+  it("refuses symbolic-link files", async () => {
+    let supported = true;
+    try {
+      await symlink(join(root, "README.md"), join(root, "linked.md"), "file");
+    } catch {
+      supported = false;
+    }
+    if (!supported) return;
+    await expect(readWorkspaceTextFile(root, "linked.md")).rejects.toThrow(/symbolic/i);
+  });
+
+  it("flags binary files with a NUL byte and skips decoding", async () => {
+    const bytes = Buffer.from([0x50, 0x4b, 0x00, 0x03, 0x04]);
+    await writeFile(join(root, "archive.bin"), bytes);
+    await expect(readWorkspaceTextFile(root, "archive.bin")).resolves.toEqual({
+      path: "archive.bin",
+      content: "",
+      size: bytes.length,
+      truncated: false,
+      binary: true,
+    });
+  });
+
+  it("caps reads at the default maximum size", async () => {
+    const body = "x".repeat(MAX_TEXT_FILE_BYTES + 1);
+    await writeFile(join(root, "huge.txt"), body);
+    const result = await readWorkspaceTextFile(root, "huge.txt");
+    expect(result.truncated).toBe(true);
+    expect(result.content).toHaveLength(MAX_TEXT_FILE_BYTES);
+    expect(result.size).toBe(MAX_TEXT_FILE_BYTES + 1);
+  });
+
+  it("truncates content beyond the byte cap", async () => {
+    const body = "a".repeat(4096);
+    await writeFile(join(root, "large.txt"), body);
+    await expect(readWorkspaceTextFile(root, "large.txt", 1024)).resolves.toEqual({
+      path: "large.txt",
+      content: "a".repeat(1024),
+      size: body.length,
+      truncated: true,
+      binary: false,
+    });
+  });
 });

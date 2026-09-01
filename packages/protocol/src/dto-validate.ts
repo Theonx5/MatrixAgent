@@ -1726,6 +1726,16 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.paths.every(isString)
         ? null
         : "invalid workspace.setDirectoryWatches result";
+    case "workspace.readTextFile":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["path", "content", "size", "truncated", "binary"]) &&
+        isString(result.path) &&
+        isString(result.content) &&
+        isSafeRevision(result.size) &&
+        isBoolean(result.truncated) &&
+        isBoolean(result.binary)
+        ? null
+        : "invalid workspace.readTextFile result";
     case "git.getStatus":
       return isGitStatusSnapshot(result) ? null : "invalid git.getStatus result";
     case "git.setWatching":

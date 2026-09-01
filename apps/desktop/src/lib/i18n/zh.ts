@@ -850,6 +850,16 @@ export const zh: Record<MessageKey, string> = {
   dockWorkspaceForTerminal: "打开工作区后可使用终端",
   dockExtensionCloseTimeout: "扩展面板无法关闭，请使用面板自身的退出快捷键",
 
+  // Text preview
+  dockTextPreview: "文本预览",
+  dockTextPreviewRegion: "预览 {name}",
+  dockTextPreviewRefresh: "刷新预览",
+  dockTextPreviewBinary: "二进制文件无法预览。",
+  dockTextPreviewEmpty: "此文件为空。",
+  dockTextPreviewTruncated: "预览已截断：文件超过读取大小限制，可用工作区终端查看剩余内容。",
+  dockTextPreviewFailed: "无法读取文件。",
+  dockTextPreviewLimit: "打开的文本预览标签页过多，请先关闭一个再试。",
+
   // Browser controls
   dockBrowserNativeOnly: "Dock 浏览器仅在桌面应用中可用",
   dockBrowserBack: "后退",
@@ -882,6 +892,8 @@ export const zh: Record<MessageKey, string> = {
   dockFilesExpandNamed: "展开：{name}",
   dockFilesInsertReference: "插入文件引用",
   dockFilesInsertReferenceTo: "插入引用：{path}",
+  dockFilesPreview: "预览文件",
+  dockFilesPreviewNamed: "预览 {path}",
   dockFilesCopyRelativePath: "复制相对路径",
   dockFilesCopyPath: "复制路径：{path}",
   dockFilesOpenFolder: "打开文件夹",

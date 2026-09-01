@@ -74,6 +74,7 @@ export type HostContextMap = {
   "workspace.getCurrent": WorkspaceContext;
   "workspace.searchFiles": WorkspaceContext;
   "workspace.listDirectory": WorkspaceContext;
+  "workspace.readTextFile": WorkspaceContext;
   "workspace.setDirectoryWatches": WorkspaceContext;
   "git.getStatus": WorkspaceContext;
   "git.setWatching": WorkspaceContext;
@@ -176,6 +177,7 @@ export type HostRequestParams = {
   "workspace.getCurrent": null;
   "workspace.searchFiles": { query: string; limit?: number };
   "workspace.listDirectory": { path: string };
+  "workspace.readTextFile": { path: string };
   "workspace.setDirectoryWatches": { paths: string[] };
   "git.getStatus": null;
   "git.setWatching": { enabled: boolean };
@@ -320,6 +322,13 @@ export type HostResultMap = {
   "workspace.listDirectory": {
     path: string;
     entries: WorkspaceDirectoryEntry[];
+  };
+  "workspace.readTextFile": {
+    path: string;
+    content: string;
+    size: number;
+    truncated: boolean;
+    binary: boolean;
   };
   "workspace.setDirectoryWatches": { paths: string[] };
   "git.getStatus": GitStatusSnapshot;

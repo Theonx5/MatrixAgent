@@ -349,6 +349,10 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["path"]) && isString(params.path)
         ? ok(params)
         : fail("invalid workspace.listDirectory params", { method });
+    case "workspace.readTextFile":
+      return exactObject(params, ["path"]) && isString(params.path)
+        ? ok(params)
+        : fail("invalid workspace.readTextFile params", { method });
     case "workspace.setDirectoryWatches":
       return exactObject(params, ["paths"]) &&
         Array.isArray(params.paths) &&

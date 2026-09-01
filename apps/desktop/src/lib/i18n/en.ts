@@ -881,6 +881,17 @@ export const en = {
   dockExtensionCloseTimeout:
     "Extension panel could not be closed; use the panel's own exit shortcut",
 
+  // Text preview
+  dockTextPreview: "Text preview",
+  dockTextPreviewRegion: "Preview {name}",
+  dockTextPreviewRefresh: "Refresh preview",
+  dockTextPreviewBinary: "Binary files cannot be previewed.",
+  dockTextPreviewEmpty: "This file is empty.",
+  dockTextPreviewTruncated:
+    "Preview truncated: the file exceeds the read size limit. Use the workspace terminal to view the rest.",
+  dockTextPreviewFailed: "Unable to read file.",
+  dockTextPreviewLimit: "Too many text preview tabs are open; close one and try again.",
+
   // Browser controls
   dockBrowserNativeOnly: "Native browser surfaces are available in the desktop app",
   dockBrowserBack: "Back",
@@ -913,6 +924,8 @@ export const en = {
   dockFilesExpandNamed: "Expand {name}",
   dockFilesInsertReference: "Insert file reference",
   dockFilesInsertReferenceTo: "Insert reference to {path}",
+  dockFilesPreview: "Preview file",
+  dockFilesPreviewNamed: "Preview {path}",
   dockFilesCopyRelativePath: "Copy relative path",
   dockFilesCopyPath: "Copy path {path}",
   dockFilesOpenFolder: "Open folder",

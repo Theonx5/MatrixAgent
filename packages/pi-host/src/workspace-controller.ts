@@ -22,14 +22,10 @@ export function createWorkspaceHandlers(
           ctx.context.expectedWorkspaceRevision !== 0
         ) {
           // still validate host
-          if (
-            ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId
-          ) {
+          if (ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId) {
             return { error: createHostError("STALE_REVISION", "Host instance mismatch") };
           }
-        } else if (
-          ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId
-        ) {
+        } else if (ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId) {
           return { error: createHostError("STALE_REVISION", "Host instance mismatch") };
         }
       } else if (stale) {
@@ -87,6 +83,26 @@ export function createWorkspaceHandlers(
           error: createHostError(
             "INVALID_REQUEST",
             error instanceof Error ? error.message : "Unable to list directory",
+          ),
+        };
+      }
+    },
+
+    "workspace.readTextFile": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const g = factory.getGraph();
+      if (!g) {
+        return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      }
+      const params = ctx.params as { path: string };
+      try {
+        return { result: await fileService.readTextFile(g.canonicalCwd, params.path) };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INVALID_REQUEST",
+            error instanceof Error ? error.message : "Unable to read file",
           ),
         };
       }
@@ -193,10 +209,7 @@ function isIgnored(rules: IgnoreRule[], rel: string, isDir: boolean): boolean {
 
 /** LiveAgent-style ranking: filename prefix < path prefix < filename substring
  * < rest, then shallower first, dirs first, alphabetical. */
-export function searchSortKey(
-  entry: SearchEntry,
-  query: string,
-): [number, number, number, string] {
+export function searchSortKey(entry: SearchEntry, query: string): [number, number, number, string] {
   const path = entry.path.toLocaleLowerCase();
   const name = path.slice(path.lastIndexOf("/") + 1);
   const rank = !query

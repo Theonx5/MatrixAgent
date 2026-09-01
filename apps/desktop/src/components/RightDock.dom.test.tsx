@@ -7,6 +7,7 @@ import type { DesktopSettings, WorkspaceSnapshot } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
 import { requestDockBrowser } from "../lib/dock-browser";
+import { requestDockTextPreview } from "../lib/dock-text";
 import { clearPendingTreePanelForTest, requestTreePanel } from "../lib/dock-tree";
 
 vi.mock("../features/dock/ShellTerminal", () => ({
@@ -26,6 +27,13 @@ vi.mock("../features/dock/BrowserPanel", () => ({
   BrowserPanel: ({ initialUrl }: { initialUrl?: string }) => (
     <div data-testid="browser-panel" data-initial-url={initialUrl} />
   ),
+}));
+
+vi.mock("../features/dock/TextPreviewPanel", () => ({
+  TextPreviewPanel: ({ path }: { path: string }) => (
+    <div data-testid="text-preview" data-path={path} />
+  ),
+  isPreviewableFileName: (path: string) => /\.(?:md|markdown|txt)$/i.test(path),
 }));
 
 vi.mock("../features/dock/ChangesPanel", () => ({
@@ -300,5 +308,66 @@ describe("RightDock pages", () => {
 
     act(() => requestTreePanel());
     expect(screen.getAllByRole("tab", { name: "Tree" })).toHaveLength(1);
+  });
+});
+
+describe("RightDock text previews", () => {
+  it("opens, focuses, and closes text preview pages from requests", async () => {
+    useAppStore.setState({ dockOpen: false });
+    render(<RightDock />);
+
+    act(() => {
+      expect(requestDockTextPreview({ path: "README.md", name: "README.md" })).toBe(true);
+      expect(requestDockTextPreview({ path: "README.md", name: "README.md" })).toBe(true);
+      expect(requestDockTextPreview({ path: "docs/notes.txt", name: "notes.txt" })).toBe(true);
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId("text-preview")).toHaveLength(2));
+    expect(screen.getAllByTestId("text-preview").map((panel) => panel.dataset.path)).toEqual([
+      "README.md",
+      "docs/notes.txt",
+    ]);
+    const tabs = screen.getAllByRole("tab", { name: "notes.txt" });
+    expect(tabs.at(-1)).toHaveAttribute("aria-selected", "true");
+    expect(useAppStore.getState().dockOpen).toBe(true);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Close notes.txt" }));
+    await waitFor(() => expect(screen.getAllByTestId("text-preview")).toHaveLength(1));
+    expect(screen.queryByRole("tab", { name: "notes.txt" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "README.md" })).toBeVisible();
+  });
+
+  it("limits text preview pages to twelve", async () => {
+    render(<RightDock />);
+
+    act(() => {
+      for (let index = 0; index < 12; index += 1) {
+        expect(
+          requestDockTextPreview({ path: `file-${index}.txt`, name: `file-${index}.txt` }),
+        ).toBe(true);
+      }
+      expect(requestDockTextPreview({ path: "overflow.txt", name: "overflow.txt" })).toBe(false);
+    });
+    await waitFor(() => expect(screen.getAllByTestId("text-preview")).toHaveLength(12));
+  });
+
+  it("activates an existing preview tab for the same path", async () => {
+    render(<RightDock />);
+
+    act(() => {
+      requestDockTextPreview({ path: "a.md", name: "a.md" });
+      requestDockTextPreview({ path: "b.md", name: "b.md" });
+    });
+    await waitFor(() => expect(screen.getAllByTestId("text-preview")).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "b.md" })).toHaveAttribute("aria-selected", "true"),
+    );
+
+    act(() => requestDockTextPreview({ path: "a.md", name: "a.md" }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "a.md" })).toHaveAttribute("aria-selected", "true"),
+    );
+    expect(screen.getAllByTestId("text-preview")).toHaveLength(2);
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  FileText,
   FolderTree,
   GitBranch,
   GitCompareArrows,
@@ -28,15 +29,23 @@ import {
 } from "../features/dock/ShellTerminal";
 import { FilesPanel } from "../features/dock/FilesPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
+import { TextPreviewPanel } from "../features/dock/TextPreviewPanel";
 import { TreePanel } from "../features/dock/TreePanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { subscribeDockBrowser } from "../lib/dock-browser";
+import { subscribeDockText } from "../lib/dock-text";
 import { subscribeTreePanel } from "../lib/dock-tree";
 import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  "files" | "tree" | "changes" | `browser:${number}` | `shell:${number}` | `extension:${string}`;
+  | "files"
+  | "tree"
+  | "changes"
+  | `browser:${number}`
+  | `text:${number}`
+  | `shell:${number}`
+  | `extension:${string}`;
 
 type ShellDockTab = {
   id: number;
@@ -52,11 +61,17 @@ type BrowserDockTab = {
   initialUrl: string;
 };
 
+type TextDockTab = {
+  id: number;
+  path: string;
+};
+
 const DOCK_WIDTH_KEY = "pideck.dock.width.v1";
 const DEFAULT_DOCK_WIDTH = 460;
 const MIN_DOCK_WIDTH = SIDEBAR_WIDTH;
 const MAX_DOCK_WIDTH = 720;
 const MAX_BROWSER_TABS = 8;
+const MAX_TEXT_TABS = 12;
 const MIN_TAB_WIDTH = 96;
 const TAB_GAP = 4;
 const TAB_CONTROL_WIDTH = 28;
@@ -67,6 +82,10 @@ function shellTabId(id: number): DockTabId {
 
 function browserTabId(id: number): DockTabId {
   return `browser:${id}`;
+}
+
+function textTabId(id: number): DockTabId {
+  return `text:${id}`;
 }
 
 function extensionTabId(requestId: string): DockTabId {
@@ -139,6 +158,7 @@ export function RightDock() {
   );
   const [shellTabs, setShellTabs] = useState<ShellDockTab[]>([]);
   const [browserTabs, setBrowserTabs] = useState<BrowserDockTab[]>([]);
+  const [textTabs, setTextTabs] = useState<TextDockTab[]>([]);
   const [extensionClosing, setExtensionClosing] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState(initialDockWidth);
   const [resizing, setResizing] = useState(false);
@@ -148,7 +168,9 @@ export function RightDock() {
   const nextShellId = useRef(1);
   const nextShellGeneration = useRef(1);
   const nextBrowserId = useRef(1);
+  const nextTextId = useRef(1);
   const browserTabsRef = useRef<BrowserDockTab[]>([]);
+  const textTabsRef = useRef<TextDockTab[]>([]);
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -157,6 +179,14 @@ export function RightDock() {
   const visibleTabIdsRef = useRef<DockTabId[]>([]);
   dockWidthRef.current = dockWidth;
   browserTabsRef.current = browserTabs;
+  textTabsRef.current = textTabs;
+
+  const updateTextTabs = (updater: (current: TextDockTab[]) => TextDockTab[]) => {
+    const next = updater(textTabsRef.current);
+    textTabsRef.current = next;
+    setTextTabs(next);
+    return next;
+  };
 
   const updateBrowserTabs = (updater: (current: BrowserDockTab[]) => BrowserDockTab[]) => {
     const next = updater(browserTabsRef.current);
@@ -330,6 +360,37 @@ export function RightDock() {
     [],
   );
 
+  const openTextPreview = (path: string): boolean => {
+    const existing = textTabsRef.current.find((tab) => tab.path === path);
+    if (existing) {
+      setActiveTab(textTabId(existing.id));
+      return true;
+    }
+    if (textTabsRef.current.length >= MAX_TEXT_TABS) return false;
+    const id = nextTextId.current++;
+    updateTextTabs((current) => [...current, { id, path }]);
+    const tabId = textTabId(id);
+    setTabOrder((current) => [...current, tabId]);
+    setActiveTab(tabId);
+    return true;
+  };
+
+  useEffect(
+    () =>
+      subscribeDockText(({ path }) => {
+        if (!openTextPreview(path)) return false;
+        if (!useAppStore.getState().dockOpen) {
+          setDockOpen(true);
+          setSidebarPref("pideck.dock.open", true);
+        }
+        return true;
+      }),
+    // The handler reads text state through textTabsRef so rapid requests stay
+    // bounded without resubscribing between renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const createShell = () => {
     if (!workspaceCwd) return;
     const id = nextShellId.current++;
@@ -353,6 +414,11 @@ export function RightDock() {
   const closeBrowser = (id: number) => {
     updateBrowserTabs((current) => current.filter((tab) => tab.id !== id));
     closeOrderTab(browserTabId(id));
+  };
+
+  const closeText = (id: number) => {
+    updateTextTabs((current) => current.filter((tab) => tab.id !== id));
+    closeOrderTab(textTabId(id));
   };
 
   const restartShell = (id: number) => {
@@ -399,6 +465,10 @@ export function RightDock() {
       closeBrowser(Number(tabId.slice("browser:".length)));
       return;
     }
+    if (tabId.startsWith("text:")) {
+      closeText(Number(tabId.slice("text:".length)));
+      return;
+    }
     if (tabId.startsWith("shell:")) {
       closeShell(Number(tabId.slice("shell:".length)));
       return;
@@ -410,6 +480,14 @@ export function RightDock() {
     if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
     if (tabId === "tree") return { label: t("dockTree"), Icon: GitBranch };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
+    if (tabId.startsWith("text:")) {
+      const id = Number(tabId.slice("text:".length));
+      const text = textTabs.find((tab) => tab.id === id);
+      return {
+        label: text ? text.path.slice(text.path.lastIndexOf("/") + 1) : t("dockTextPreview"),
+        Icon: FileText,
+      };
+    }
     if (tabId.startsWith("browser:")) {
       const id = Number(tabId.slice("browser:".length));
       return {
@@ -785,6 +863,20 @@ export function RightDock() {
                   ),
                 )
               }
+            />
+          </div>
+        ))}
+        {textTabs.map((tab) => (
+          <div
+            key={tab.id}
+            role="tabpanel"
+            id={`dock-panel-${textTabId(tab.id)}`}
+            aria-labelledby={`dock-tab-${textTabId(tab.id)}`}
+            className={`min-h-0 flex-1 ${activeTab === textTabId(tab.id) ? "flex" : "hidden"}`}
+          >
+            <TextPreviewPanel
+              path={tab.path}
+              visible={activeTab === textTabId(tab.id) && dockOpen}
             />
           </div>
         ))}

@@ -56,6 +56,7 @@ Implemented in `packages/protocol` + handlers in `packages/pi-host`:
 
 - `system.hello` / `getStatus` / `rehydrate` / `shutdown`
 - `workspace.setCurrent` / `getCurrent`
+- `workspace.readTextFile` — bounded utf8 text read of a workspace file (symlink-rejecting path walk, NUL-byte binary detection, size cap with `truncated` flag); backs the dock text preview
 - `session.*` (list, create, open, snapshot, name, entries, tree, stats)
 - `agent.*` (prompt, steer, followUp, abort, queue, compact, tools, …)
 - `model.list` / `setCurrent` / `setThinkingLevel`

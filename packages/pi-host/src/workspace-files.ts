@@ -1,9 +1,11 @@
 import { watch, type FSWatcher } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, open, readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { WorkspaceDirectoryEntry } from "@pideck/protocol";
 
 export const MAX_DIRECTORY_WATCHES = 128;
+export const MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024;
+const BINARY_SNIFF_BYTES = 8192;
 const WATCH_COALESCE_MS = 100;
 
 export function normalizeWorkspaceRelativePath(input: string): string {
@@ -48,6 +50,62 @@ async function resolveWorkspaceDirectory(
   return resolved;
 }
 
+async function resolveWorkspaceFilePath(
+  root: string,
+  input: string,
+): Promise<{ absolute: string; path: string; size: number }> {
+  const resolved = resolveContainedPath(root, input);
+  let cursor = root;
+  for (const segment of resolved.path.split("/").filter(Boolean)) {
+    cursor = resolve(cursor, segment);
+    const stats = await lstat(cursor);
+    if (stats.isSymbolicLink()) {
+      throw new Error("Symbolic-link paths cannot be read");
+    }
+  }
+  const stats = await lstat(resolved.absolute);
+  if (!stats.isFile()) throw new Error("Workspace path is not a file");
+  return { absolute: resolved.absolute, path: resolved.path, size: stats.size };
+}
+
+export type WorkspaceTextFile = {
+  path: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+  binary: boolean;
+};
+
+export async function readWorkspaceTextFile(
+  root: string,
+  input: string,
+  maxBytes = MAX_TEXT_FILE_BYTES,
+): Promise<WorkspaceTextFile> {
+  const file = await resolveWorkspaceFilePath(root, input);
+  const byteLimit = Math.max(0, Math.min(file.size, maxBytes));
+  const handle = await open(file.absolute, "r");
+  try {
+    const buffer = Buffer.alloc(byteLimit);
+    let read = 0;
+    while (read < byteLimit) {
+      const { bytesRead } = await handle.read(buffer, read, byteLimit - read, read);
+      if (bytesRead === 0) break;
+      read += bytesRead;
+    }
+    const binary = buffer.subarray(0, Math.min(read, BINARY_SNIFF_BYTES)).includes(0);
+    const content = binary ? "" : buffer.subarray(0, read).toString("utf8");
+    return {
+      path: file.path,
+      content,
+      size: file.size,
+      truncated: file.size > read,
+      binary,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function listWorkspaceDirectory(
   root: string,
   input: string,
@@ -80,6 +138,10 @@ export class WorkspaceFileService {
 
   listDirectory(root: string, path: string) {
     return listWorkspaceDirectory(root, path);
+  }
+
+  readTextFile(root: string, path: string, maxBytes?: number) {
+    return readWorkspaceTextFile(root, path, maxBytes);
   }
 
   async setDirectoryWatches(
