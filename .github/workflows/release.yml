@@ -1,0 +1,204 @@
+name: Release desktop installers
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.1.1)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows-x64
+            label: Windows x64
+            runner: windows-2022
+          - id: macos-arm64
+            label: macOS Apple Silicon
+            runner: macos-15
+          - id: macos-x64
+            label: macOS Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: ${{ runner.os }}-${{ runner.arch }}-release-runtime-${{ hashFiles('scripts/release-runtime.lock.json') }}
+      - name: Configure macOS signing
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          values=(
+            "$APPLE_CERTIFICATE"
+            "$APPLE_CERTIFICATE_PASSWORD"
+            "$APPLE_SIGNING_IDENTITY_SECRET"
+            "$APPLE_ID"
+            "$APPLE_PASSWORD"
+            "$APPLE_TEAM_ID"
+            "$KEYCHAIN_PASSWORD"
+          )
+          present=0
+          for value in "${values[@]}"; do
+            if [[ -n "$value" ]]; then present=$((present + 1)); fi
+          done
+          if [[ "$present" -eq 0 ]]; then
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "PIDECK_MACOS_SIGNING_MODE=ad-hoc" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [[ "$present" -ne "${#values[@]}" ]]; then
+            echo "Apple release secrets must be configured as a complete set." >&2
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/pideck-build.keychain-db"
+          certificate="$RUNNER_TEMP/pideck-developer-id.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security default-keychain -s "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -t 3600 -u "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY_SECRET" >> "$GITHUB_ENV"
+          echo "PIDECK_MACOS_SIGNING_MODE=developer-id" >> "$GITHUB_ENV"
+          echo "APPLE_ID=$APPLE_ID" >> "$GITHUB_ENV"
+          echo "APPLE_PASSWORD=$APPLE_PASSWORD" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - name: Record verified source commit
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          echo "Verified source commit ${commit} for tag ${RELEASE_TAG}"
+      - name: Verify Windows source gate
+        if: runner.os == 'Windows'
+        run: pnpm verify:p0
+      - name: Verify macOS JavaScript source
+        if: runner.os == 'macOS'
+        run: pnpm verify:quick && pnpm build
+      - name: Restore files generated during verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --porcelain || true
+          git restore --worktree --source=HEAD -- .
+          git status --porcelain || true
+      - name: Package from the verified source commit
+        env:
+          PIDECK_VERIFIED_SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: pnpm package:release
+      - name: Confirm package manifest source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          manifest="apps/desktop/src-tauri/target/release-staging/PACKAGE_RELEASE.json"
+          COMMIT="$commit" MANIFEST="$manifest" node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const commit = process.env.COMMIT;
+            const manifest = JSON.parse(readFileSync(process.env.MANIFEST, "utf8"));
+            if (manifest.sourceCommit !== commit) {
+              console.error(`sourceCommit ${manifest.sourceCommit} !== ${commit}`);
+              process.exit(1);
+            }
+            if (manifest.reusedSourceBuildCommit !== commit) {
+              console.error(`reusedSourceBuildCommit ${manifest.reusedSourceBuildCommit} !== ${commit}`);
+              process.exit(1);
+            }
+            console.log(`PACKAGE_RELEASE.json records source commit ${commit}`);
+          '
+      - name: Stage accepted platform assets
+        shell: bash
+        run: node scripts/generate-update-manifest.mjs --stage-platform --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-platform-${{ matrix.id }}
+          path: apps/desktop/src-tauri/target/release-staging/github-release-platform
+          if-no-files-found: error
+          retention-days: 7
+
+  create-release:
+    name: Create draft release
+    needs: build-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-platform-*
+          path: release-input
+          merge-multiple: true
+      - name: Generate cross-platform updater feed
+        shell: bash
+        run: |
+          node scripts/generate-update-manifest.mjs \
+            --tag "$RELEASE_TAG" \
+            --input-dir release-input \
+            --output-dir release-output
+      - name: Create or update draft GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(release-output/*)
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --clobber "${assets[@]}"
+            gh release edit "$RELEASE_TAG" --draft --title "PiDeck $RELEASE_TAG"
+          else
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --title "PiDeck $RELEASE_TAG" \
+              --generate-notes \
+              "${assets[@]}"
+          fi

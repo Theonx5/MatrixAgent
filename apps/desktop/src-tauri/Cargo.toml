@@ -1,0 +1,47 @@
+[package]
+name = "pideck"
+version = "0.2.2"
+description = "PiDeck"
+authors = ["PiDeck contributors"]
+edition = "2021"
+
+[lib]
+name = "pideck_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "unstable", "macos-private-api"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "rt-multi-thread", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+thiserror = "2"
+portable-pty = "0.9"
+base64 = "0.22.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+# Tauri #15625 restores the last child WebView focus after Windows activation.
+# Remove this Git patch after the fix ships in a tauri-runtime-wry release.
+[patch.crates-io]
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "08acfb3fa04945a6a4f822d66c7556111d9385aa" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "08acfb3fa04945a6a4f822d66c7556111d9385aa" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "08acfb3fa04945a6a4f822d66c7556111d9385aa" }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true

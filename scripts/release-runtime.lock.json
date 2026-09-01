@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 3,
+  "platform": "win32",
+  "arch": "x64",
+  "node": {
+    "version": "24.18.0",
+    "arch": "x64",
+    "os": "win",
+    "archive": "node-v24.18.0-win-x64.zip",
+    "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip",
+    "sha256": "0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821",
+    "expectedFiles": ["node.exe", "npm.cmd", "npx.cmd"]
+  },
+  "targets": {
+    "darwin-arm64": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "node": {
+        "version": "24.18.0",
+        "arch": "arm64",
+        "os": "darwin",
+        "archive": "node-v24.18.0-darwin-arm64.tar.gz",
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-arm64.tar.gz",
+        "sha256": "e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1",
+        "expectedFiles": ["bin/node", "bin/npm", "bin/npx", "lib/node_modules/npm/package.json"]
+      },
+      "git": {
+        "strategy": "system-required"
+      }
+    },
+    "darwin-x64": {
+      "platform": "darwin",
+      "arch": "x64",
+      "node": {
+        "version": "24.18.0",
+        "arch": "x64",
+        "os": "darwin",
+        "archive": "node-v24.18.0-darwin-x64.tar.gz",
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-x64.tar.gz",
+        "sha256": "dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080",
+        "expectedFiles": ["bin/node", "bin/npm", "bin/npx", "lib/node_modules/npm/package.json"]
+      },
+      "git": {
+        "strategy": "system-required"
+      }
+    }
+  },
+  "npm": {
+    "bundledWithNode": true,
+    "minVersion": "10.0.0",
+    "entry": "npm.cmd"
+  },
+  "git": {
+    "strategy": "pinned-portable-required",
+    "portable": {
+      "version": "2.55.0.3",
+      "tag": "v2.55.0.windows.3",
+      "archive": "PortableGit-2.55.0.3-64-bit.7z.exe",
+      "url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/PortableGit-2.55.0.3-64-bit.7z.exe",
+      "sha256": "ab00566336b5472120f9a52d34f2e79c5406535792acb0548001ffd0bd090e5d",
+      "expectedFiles": ["cmd/git.exe", "bin/git.exe", "bin/bash.exe"]
+    }
+  },
+  "pnpmLock": {
+    "path": "pnpm-lock.yaml",
+    "sha256": "bcb428b10ba357fb80939832a752a8b3f556d937938d2cffd7fa762b877d4d36"
+  },
+  "hostProductionDeps": {
+    "strategy": "pnpm-deploy-from-frozen-lockfile",
+    "manifest": "packages/pi-host/package.json",
+    "sdkPatchSha256": "3b8e0ee4a30daa6d8687e71700fe5176fc9854d5b6d3ff3246eff420d3283410",
+    "forbidUnlockedNpmInstall": true,
+    "forbidGlobalNpmFallback": true,
+    "forbidProcessExecPathAsRuntime": true
+  },
+  "protocolPackage": {
+    "name": "@pideck/protocol",
+    "path": "packages/protocol"
+  }
+}

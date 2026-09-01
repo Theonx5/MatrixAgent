@@ -1,0 +1,60 @@
+{
+  "name": "pideck",
+  "private": true,
+  "version": "0.2.2",
+  "description": "A desktop interface for Pi Coding Agent",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @pideck/protocol run build && pnpm --filter @pideck/pi-host run build && pnpm --filter @pideck/desktop run build",
+    "typecheck": "pnpm --filter @pideck/protocol run build && pnpm --filter @pideck/protocol run typecheck && pnpm --filter @pideck/pi-host run typecheck && pnpm --filter @pideck/desktop run typecheck",
+    "test": "pnpm --filter @pideck/protocol run build && pnpm -r --filter @pideck/protocol --filter @pideck/pi-host --filter @pideck/desktop run test",
+    "dev:host": "pnpm --filter @pideck/pi-host run dev",
+    "dev:desktop": "pnpm --filter @pideck/desktop run dev",
+    "dev:fast": "node scripts/dev-fast.mjs",
+    "spike:sidecar": "pnpm --filter @pideck/pi-host run spike:sidecar",
+    "package:sidecar": "node scripts/package-release-sidecar.mjs",
+    "package:sidecar:with-node": "node scripts/package-release-sidecar.mjs --prepare-runtime",
+    "prepare:runtime": "node scripts/prepare-release-runtime.mjs",
+    "validate:resources": "node scripts/validate-resource-layout.mjs",
+    "smoke:staged-host": "node scripts/smoke-staged-host.mjs",
+    "verify:release-metadata": "node --test scripts/release-sdk-evidence.test.mjs scripts/generate-update-manifest.test.mjs scripts/portable-node-modules.test.mjs scripts/pi-host-bootstrap-runtime.test.mjs scripts/verified-source-build.test.mjs",
+    "verify:docs": "node scripts/verify-doc-links.mjs",
+    "verify:fixtures": "node scripts/scan-pi-agent-fixtures.mjs",
+    "test:rust": "node scripts/prepare-rust-test-resources.mjs && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir apps/desktop/src-tauri/target/verify-rust",
+    "package:release": "node scripts/package-release.mjs",
+    "verify:quick": "pnpm verify:docs && pnpm verify:fixtures && pnpm verify:release-metadata && pnpm lint && pnpm typecheck && pnpm test",
+    "verify:p0": "pnpm verify:quick && pnpm build && pnpm test:rust && pnpm lint:rust",
+    "lint": "pnpm lint:js && pnpm lint:unused && pnpm format:check",
+    "lint:js": "eslint eslint.config.mjs apps/desktop/src apps/desktop/vite.config.ts apps/desktop/vitest.config.ts packages/protocol/src packages/protocol/vitest.config.ts packages/pi-host/src packages/pi-host/vitest.config.ts scripts",
+    "lint:unused": "knip",
+    "lint:rust": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir apps/desktop/src-tauri/target/verify-clippy --all-targets --locked -- -D warnings",
+    "format": "prettier --write eslint.config.mjs apps/desktop/src apps/desktop/*.config.ts packages/*/src packages/*/*.config.ts scripts package.json pnpm-workspace.yaml .github/workflows",
+    "format:changed": "node scripts/check-format.mjs --write",
+    "format:check": "node scripts/check-format.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.8.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.9.0",
+    "knip": "6.31.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "yaml": "2.9.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "brace-expansion": "5.0.9",
+      "undici@8": "8.9.0",
+      "mermaid": "11.16.1",
+      "dompurify": "3.4.13"
+    },
+    "patchedDependencies": {
+      "@earendil-works/pi-coding-agent@0.84.2": "patches/@earendil-works__pi-coding-agent@0.84.2.patch"
+    }
+  }
+}

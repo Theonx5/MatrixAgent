@@ -1,0 +1,476 @@
+/**
+ * Stage runnable Pi Host + controlled Node from runtime lock (C1).
+ *
+ * - NO global npm fallback
+ * - NO unlocked online npm install
+ * - Production deps via `pnpm deploy --prod` from frozen workspace lock
+ * - Verifies pnpm-lock.yaml hash against release-runtime.lock.json
+ *
+ * Layout:
+ *   resources/node/     — full Node distro + RUNTIME.json
+ *   resources/pi-host/  — main.js + STAGING.json + production node_modules
+ */
+import {
+  cpSync,
+  mkdirSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  assertPiPackageTree,
+  assertReleaseProductionManifest,
+  deriveReleaseProductionDependencies,
+  loadReleaseSdkEvidence,
+} from "./release-sdk-evidence.mjs";
+import { releaseRuntimeImportSpecifiers } from "./release-runtime-imports.mjs";
+import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
+import {
+  assertNodeModulesGraph,
+  detachNodeModulesLinks,
+  restoreNodeModulesLinks,
+  snapshotNodeModulesGraph,
+} from "./portable-node-modules.mjs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const hostDist = join(root, "packages/pi-host/dist");
+const protocolDist = join(root, "packages/protocol/dist");
+const protocolPkgJson = join(root, "packages/protocol/package.json");
+const hostPkgJson = join(root, "packages/pi-host/package.json");
+const dest = join(root, "apps/desktop/src-tauri/resources/pi-host");
+const nodeDir = join(root, "apps/desktop/src-tauri/resources/node");
+const gitDir = join(root, "apps/desktop/src-tauri/resources/git");
+const lockPath = join(root, "scripts/release-runtime.lock.json");
+const pnpmLock = join(root, "pnpm-lock.yaml");
+const stageTimingsMs = {};
+
+function timedStage(label, operation) {
+  const started = Date.now();
+  console.log(`[package-sidecar] ${label} started`);
+  try {
+    return operation();
+  } finally {
+    const elapsed = Date.now() - started;
+    stageTimingsMs[label] = elapsed;
+    console.log(`[package-sidecar] ${label} finished in ${elapsed}ms`);
+  }
+}
+
+function die(msg) {
+  console.error("[package-sidecar]", msg);
+  process.exit(1);
+}
+
+function sha256File(file) {
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+if (!existsSync(hostDist)) die("packages/pi-host/dist missing — run pnpm build first");
+if (!existsSync(protocolDist)) die("packages/protocol/dist missing — run pnpm build first");
+if (!existsSync(lockPath)) die("scripts/release-runtime.lock.json missing");
+if (!existsSync(pnpmLock)) die("pnpm-lock.yaml missing");
+
+const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+let runtimeTarget;
+try {
+  runtimeTarget = resolveReleaseRuntimeTarget(lock);
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
+if (lock.hostProductionDeps?.forbidUnlockedNpmInstall !== true) {
+  die("lock must set hostProductionDeps.forbidUnlockedNpmInstall=true");
+}
+
+let sdkEvidence;
+try {
+  sdkEvidence = loadReleaseSdkEvidence(root, lock);
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
+
+// Verify frozen lock hash
+const lockSha = sha256File(pnpmLock);
+const expectedSha = lock.pnpmLock?.sha256;
+if (!expectedSha) die("release-runtime.lock.json missing pnpmLock.sha256");
+if (lockSha !== expectedSha) {
+  die(
+    `pnpm-lock.yaml SHA-256 mismatch\n  expected ${expectedSha}\n  got      ${lockSha}\n  Update scripts/release-runtime.lock.json after intentional lock changes.`,
+  );
+}
+console.log("[package-sidecar] pnpm-lock.yaml sha256 OK");
+
+// Optionally prepare controlled Node from lock
+if (process.argv.includes("--prepare-runtime") || process.argv.includes("--copy-system-node")) {
+  if (
+    process.argv.includes("--copy-system-node") &&
+    !process.argv.includes("--allow-execpath-fallback")
+  ) {
+    console.warn(
+      "[package-sidecar] --copy-system-node is not allowed for release; running prepare-release-runtime.mjs",
+    );
+  }
+  const prep = timedStage("prepare controlled runtimes", () =>
+    spawnSync(process.execPath, [join(root, "scripts/prepare-release-runtime.mjs")], {
+      cwd: root,
+      stdio: "inherit",
+      env: process.env,
+    }),
+  );
+  if (prep.status !== 0) {
+    const cause = prep.error
+      ? `spawn error: ${prep.error.message}`
+      : prep.signal
+        ? `signal: ${prep.signal}`
+        : `exit status: ${String(prep.status)}`;
+    die(`prepare-release-runtime failed (${cause})`);
+  }
+}
+
+const stagedNode = join(nodeDir, runtimeTarget.stagedNodeExecutable);
+const stagedNpm = join(nodeDir, runtimeTarget.stagedNpmExecutable);
+if (!existsSync(stagedNode)) {
+  die("controlled Node missing — run: pnpm prepare:runtime");
+}
+if (!existsSync(join(nodeDir, "RUNTIME.json"))) {
+  die("resources/node/RUNTIME.json missing — runtime not prepared via lock");
+}
+if (!existsSync(stagedNpm)) {
+  die(`controlled ${runtimeTarget.stagedNpmExecutable} missing — refuse global npm fallback`);
+}
+if (
+  runtimeTarget.git.strategy === "bundled-portable" &&
+  !existsSync(join(gitDir, "cmd", "git.exe"))
+) {
+  die("controlled Portable Git missing — run: pnpm prepare:runtime");
+}
+if (!existsSync(join(gitDir, "RUNTIME.json"))) {
+  die("resources/git/RUNTIME.json missing — Git strategy not prepared via lock");
+}
+
+const runtimeMeta = JSON.parse(readFileSync(join(nodeDir, "RUNTIME.json"), "utf8"));
+if (runtimeMeta.usedProcessExecPath === true) {
+  die("RUNTIME.json usedProcessExecPath must be false");
+}
+if (runtimeMeta.target !== runtimeTarget.key) {
+  die(`staged Node target ${runtimeMeta.target ?? "missing"} vs ${runtimeTarget.key}`);
+}
+if (runtimeMeta.archiveSha256 !== runtimeTarget.node.sha256) {
+  die(
+    `staged Node archive hash mismatch: RUNTIME ${runtimeMeta.archiveSha256} vs lock ${runtimeTarget.node.sha256}`,
+  );
+}
+const gitRuntimeMeta = JSON.parse(readFileSync(join(gitDir, "RUNTIME.json"), "utf8"));
+if (gitRuntimeMeta.target !== runtimeTarget.key) {
+  die(`staged Git target ${gitRuntimeMeta.target ?? "missing"} vs ${runtimeTarget.key}`);
+}
+if (gitRuntimeMeta.strategy !== runtimeTarget.git.strategy) {
+  die(
+    `staged Git strategy ${gitRuntimeMeta.strategy ?? "missing"} vs ${runtimeTarget.git.strategy}`,
+  );
+}
+if (
+  runtimeTarget.git.strategy === "bundled-portable" &&
+  gitRuntimeMeta.archiveSha256 !== runtimeTarget.git.portable.sha256
+) {
+  die(
+    `staged Git archive hash mismatch: RUNTIME ${gitRuntimeMeta.archiveSha256} vs lock ${runtimeTarget.git.portable.sha256}`,
+  );
+}
+if (runtimeTarget.git.strategy === "bundled-portable") {
+  const portableGitFiles = runtimeTarget.git.portable?.expectedFiles ?? [];
+  if (portableGitFiles.length === 0) {
+    die("release-runtime lock portable Git expectedFiles is empty");
+  }
+  for (const expected of portableGitFiles) {
+    if (!existsSync(join(gitDir, ...expected.split("/")))) {
+      die(`staged Portable Git missing expected file: ${expected}`);
+    }
+  }
+}
+const gitProbeExecutable =
+  runtimeTarget.git.strategy === "bundled-portable" ? join(gitDir, "cmd", "git.exe") : "git";
+const gitProbe = spawnSync(gitProbeExecutable, ["--version"], {
+  encoding: "utf8",
+  shell: false,
+  timeout: 30_000,
+});
+if (gitProbe.status !== 0 || !String(gitProbe.stdout).includes("git version")) {
+  die(`release Git probe failed: ${gitProbe.stderr || gitProbe.stdout}`);
+}
+
+function proveRuntimeImports(hostDir) {
+  const modules = releaseRuntimeImportSpecifiers(sdkEvidence.hostManifest.productionDependencies);
+  const prove = spawnSync(
+    stagedNode,
+    [
+      "-e",
+      `Promise.all(${JSON.stringify(modules)}.map((name) => import(name)))` +
+        ".then(()=>console.log('RUNTIME_IMPORTS_OK')).catch(e=>{console.error(e);process.exit(1)})",
+    ],
+    { cwd: hostDir, encoding: "utf8", shell: false },
+  );
+  return prove.status === 0 && (prove.stdout || "").includes("RUNTIME_IMPORTS_OK")
+    ? null
+    : prove.stderr || prove.stdout || "release runtime imports failed";
+}
+
+/**
+ * Stage production dependencies in an external temporary directory, then copy only
+ * node_modules into a freshly-created release root. Deploying into the final resource
+ * directory can recursively package the destination itself when pnpm walks the workspace.
+ */
+function stageHostWithDeploy() {
+  // pnpm 9 resolves deploy links incorrectly when the workspace and target are
+  // on different Windows drives. Keep the target outside the workspace but on
+  // the checkout volume.
+  const deployedFrom = join(dirname(root), `.pideck-host-deploy-${process.pid}-${Date.now()}`);
+  try {
+    rmSync(deployedFrom, { recursive: true, force: true });
+    console.log("[package-sidecar] pnpm deploy --prod ->", deployedFrom);
+    const deploy = timedStage("pnpm deploy production Host", () =>
+      spawnSync("pnpm", ["--filter", "@pideck/pi-host", "deploy", "--prod", deployedFrom], {
+        cwd: root,
+        encoding: "utf8",
+        shell: true,
+        env: process.env,
+      }),
+    );
+    if (
+      deploy.status !== 0 ||
+      !existsSync(join(deployedFrom, "node_modules", "@earendil-works", "pi-coding-agent"))
+    ) {
+      die(
+        `pnpm deploy failed — cannot stage production Host without unlocked install: ${
+          deploy.stderr || deploy.stdout || `exit=${deploy.status}`
+        }`,
+      );
+    }
+
+    try {
+      assertPiPackageTree(deployedFrom, sdkEvidence, "pnpm deployed Host tree");
+    } catch (error) {
+      die(error instanceof Error ? error.message : String(error));
+    }
+
+    const deployImportError = proveRuntimeImports(deployedFrom);
+    if (deployImportError) die(`deploy runtime import failed: ${deployImportError}`);
+
+    rmSync(dest, { recursive: true, force: true });
+    mkdirSync(dest, { recursive: true });
+    const sourceNodeModules = join(deployedFrom, "node_modules");
+    const stagedNodeModules = join(dest, "node_modules");
+    const deployedGraph = timedStage("snapshot production dependency graph", () =>
+      snapshotNodeModulesGraph(sourceNodeModules, sdkEvidence.hostManifest.productionDependencies),
+    );
+    const selfLink = `.pnpm/node_modules/${sdkEvidence.hostManifest.name}`;
+    const detached = timedStage("detach pnpm links for portable transfer", () =>
+      detachNodeModulesLinks(sourceNodeModules, {
+        ignoredExternalLinks: [selfLink],
+      }),
+    );
+    console.log(
+      "[package-sidecar] portable pnpm links:",
+      detached.manifest.links.length,
+      "ignored self-links:",
+      detached.ignoredExternalLinks.length,
+    );
+    let dependencyTransfer = "same-volume-rename";
+    timedStage("transfer production dependencies", () => {
+      try {
+        renameSync(sourceNodeModules, stagedNodeModules);
+      } catch (error) {
+        dependencyTransfer = "portable-copy-fallback";
+        console.warn(
+          "[package-sidecar] dependency rename unavailable; falling back to copy:",
+          error instanceof Error ? error.message : String(error),
+        );
+        cpSync(sourceNodeModules, stagedNodeModules, {
+          recursive: true,
+        });
+      }
+    });
+    timedStage("restore pnpm links after transfer", () =>
+      restoreNodeModulesLinks(stagedNodeModules, detached.manifest),
+    );
+    timedStage("verify transferred dependency graph", () =>
+      assertNodeModulesGraph(
+        stagedNodeModules,
+        sdkEvidence.hostManifest.productionDependencies,
+        deployedGraph,
+        "transferred production node_modules",
+      ),
+    );
+
+    const stagedImportError = proveRuntimeImports(dest);
+    if (stagedImportError)
+      die(`runtime import failed after dependency transfer: ${stagedImportError}`);
+    try {
+      assertPiPackageTree(dest, sdkEvidence, "staged Host tree");
+    } catch (error) {
+      die(error instanceof Error ? error.message : String(error));
+    }
+    return `pnpm-deploy-portable-graph-${dependencyTransfer}`;
+  } finally {
+    try {
+      timedStage("clean temporary deploy", () =>
+        rmSync(deployedFrom, { recursive: true, force: true }),
+      );
+    } catch {
+      /* best-effort temp cleanup */
+    }
+  }
+}
+
+// Stage: deploy first (creates dest + node_modules), then overlay Host dist
+const depStrategy = stageHostWithDeploy();
+
+// Overlay Host dist JS (deploy may have left package source stubs)
+for (const name of readdirSync(hostDist)) {
+  const src = join(hostDist, name);
+  if (name.includes(".test.")) continue;
+  if (name.endsWith(".d.ts") || name.endsWith(".d.ts.map")) continue;
+  if (statSync(src).isDirectory()) {
+    if (name === "spike" || name === "test-helpers") continue;
+    cpSync(src, join(dest, name), { recursive: true });
+  } else if (name.endsWith(".js") || name.endsWith(".js.map")) {
+    cpSync(src, join(dest, name));
+  }
+}
+if (!existsSync(join(dest, "main.js"))) die("main.js missing after stage");
+if (!existsSync(join(dest, "model-health.js"))) die("model-health.js missing — flat layout broken");
+
+// Re-prove after overlay (node_modules untouched)
+{
+  const err = proveRuntimeImports(dest);
+  if (err) die(`runtime import failed after host overlay: ${err}`);
+}
+
+for (const forbidden of [
+  "src",
+  "apps",
+  ".staging-host-deploy",
+  "tsconfig.json",
+  "vitest.config.ts",
+]) {
+  if (existsSync(join(dest, forbidden))) {
+    die(`clean Host stage contains forbidden deploy payload: ${forbidden}`);
+  }
+}
+for (const name of readdirSync(dest)) {
+  if (/\.(?:test|spec)\.[cm]?[jt]s$/i.test(name)) {
+    die(`clean Host stage contains test file: ${name}`);
+  }
+}
+
+// Ensure protocol is the workspace build (deploy may link workspace protocol)
+const protocolVendor = join(dest, "vendor", "protocol");
+mkdirSync(protocolVendor, { recursive: true });
+cpSync(protocolDist, join(protocolVendor, "dist"), { recursive: true });
+const protoMeta = JSON.parse(readFileSync(protocolPkgJson, "utf8"));
+const hostMeta = JSON.parse(readFileSync(hostPkgJson, "utf8"));
+writeFileSync(
+  join(protocolVendor, "package.json"),
+  JSON.stringify(
+    {
+      name: "@pideck/protocol",
+      version: protoMeta.version,
+      type: "module",
+      main: "./dist/index.js",
+      types: "./dist/index.d.ts",
+      exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } },
+    },
+    null,
+    2,
+  ),
+);
+// Force node_modules/@pideck/protocol → vendor
+const protoLink = join(dest, "node_modules", "@pideck", "protocol");
+mkdirSync(dirname(protoLink), { recursive: true });
+if (existsSync(protoLink)) rmSync(protoLink, { recursive: true, force: true });
+cpSync(protocolVendor, protoLink, { recursive: true });
+
+const releasePkg = {
+  name: "pideck-host-release",
+  version: hostMeta.version,
+  private: true,
+  type: "module",
+  main: "./main.js",
+  dependencies: deriveReleaseProductionDependencies(sdkEvidence, {
+    "@pideck/protocol": protoMeta.version,
+  }),
+};
+writeFileSync(join(dest, "package.json"), JSON.stringify(releasePkg, null, 2));
+
+try {
+  assertReleaseProductionManifest(
+    releasePkg,
+    sdkEvidence,
+    { "@pideck/protocol": protoMeta.version },
+    "staged release Host manifest",
+  );
+  assertPiPackageTree(dest, sdkEvidence, "final staged Host tree");
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
+
+// Layout validation — refuse flatten collision of package.json identities
+const hostPkgName = JSON.parse(readFileSync(join(dest, "package.json"), "utf8")).name;
+if (hostPkgName !== "pideck-host-release") die("pi-host package.json name overwritten");
+const protocolName = JSON.parse(
+  readFileSync(join(dest, "node_modules/@pideck/protocol/package.json"), "utf8"),
+).name;
+if (protocolName !== "@pideck/protocol") die("protocol package identity broken");
+
+const staging = {
+  status: "ok",
+  sdkVersion: sdkEvidence.sdkVersion,
+  sdkEvidence,
+  entry: "main.js",
+  layout: "flat-dist-with-portable-pnpm-node_modules",
+  stagedAt: new Date().toISOString(),
+  controlledNodePresent: true,
+  usedProcessExecPath: false,
+  usedGlobalNpm: false,
+  unlockedNpmInstall: false,
+  nodeVersion: runtimeMeta.nodeVersion,
+  runtimeTarget: runtimeTarget.key,
+  nodeArchiveSha256: runtimeMeta.archiveSha256,
+  gitStrategy: gitRuntimeMeta.strategy,
+  portableGitVersion: gitRuntimeMeta.gitVersion ?? null,
+  portableGitArchiveSha256: gitRuntimeMeta.archiveSha256 ?? null,
+  gitProbe: String(gitProbe.stdout).trim(),
+  pnpmLockSha256: lockSha,
+  pnpmLockSha256Expected: expectedSha,
+  pnpmLockVerified: true,
+  productionDependencies: releasePkg.dependencies,
+  hostPackageName: hostPkgName,
+  protocolPackageName: protocolName,
+  stagingStrategy: depStrategy,
+};
+writeFileSync(join(dest, "STAGING.json"), JSON.stringify(staging, null, 2));
+
+// Keep one deterministic dependency payload across both installer formats.
+console.log("[package-sidecar] compacting node_modules...");
+const compact = timedStage("compact production dependencies", () =>
+  spawnSync(process.execPath, [join(root, "scripts/compact-pi-host-resources.mjs")], {
+    cwd: root,
+    stdio: "inherit",
+    env: process.env,
+  }),
+);
+if (compact.status !== 0) {
+  die("compact-pi-host-resources failed");
+}
+
+const finalStaging = JSON.parse(readFileSync(join(dest, "STAGING.json"), "utf8"));
+finalStaging.stageTimingsMs = stageTimingsMs;
+writeFileSync(join(dest, "STAGING.json"), JSON.stringify(finalStaging, null, 2));
+console.log("[package-sidecar] OK", JSON.stringify(finalStaging, null, 2));

@@ -1,0 +1,8 @@
+{
+  "name": "pideck-ui-extension-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "pi": {
+    "extensions": ["./extensions/ui-blocking-extension.ts"]
+  }
+}

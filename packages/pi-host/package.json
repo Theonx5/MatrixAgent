@@ -1,0 +1,55 @@
+{
+  "name": "@pideck/pi-host",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "bin": {
+    "pideck-host": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "lint": "eslint src *.config.ts",
+    "spike:sidecar": "tsx src/spike/sidecar-extension-spike.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "@pideck/protocol": "workspace:*",
+    "typebox": "1.3.7",
+    "cross-spawn": "7.0.6",
+    "mammoth": "1.12.0",
+    "minimatch": "10.2.5",
+    "pdfjs-dist": "6.2.108",
+    "proper-lockfile": "4.1.2",
+    "turndown": "7.2.4",
+    "undici": "8.9.0",
+    "yauzl": "3.4.0"
+  },
+  "devDependencies": {
+    "@pideck-test/rpiv-ask-user-question-v1": "npm:@juicesharp/rpiv-ask-user-question@1.20.0",
+    "@pideck-test/rpiv-ask-user-question-v2": "npm:@juicesharp/rpiv-ask-user-question@2.1.0",
+    "@types/cross-spawn": "6.0.6",
+    "@types/node": "24.12.4",
+    "@types/proper-lockfile": "4.1.4",
+    "@types/turndown": "5.0.6",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
+    "tsx": "4.20.3",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4",
+    "yazl": "3.3.1"
+  }
+}
