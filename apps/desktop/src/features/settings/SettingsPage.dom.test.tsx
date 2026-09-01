@@ -115,7 +115,7 @@ describe("SettingsPage navigation guard", () => {
 
     expect(screen.getByText("Startup")).toBeInTheDocument();
     expect(screen.getByText("Restore last session")).toBeInTheDocument();
-    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.getByText("Auto-restart Matrix Host")).toBeInTheDocument();
     expect(screen.queryByLabelText(/Theme/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Language/)).not.toBeInTheDocument();
     expect(
@@ -178,7 +178,7 @@ describe("SettingsPage navigation guard", () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);
     const themeStyle = screen.getByRole("group", { name: "Theme style" });
-    const pideck = within(themeStyle).getByRole("button", { name: "PiDeck" });
+    const pideck = within(themeStyle).getByRole("button", { name: "PaperMatrix" });
     const vercel = within(themeStyle).getByRole("button", { name: "Vercel" });
     const apple = within(themeStyle).getByRole("button", { name: "Apple" });
 
@@ -228,7 +228,7 @@ describe("SettingsPage navigation guard", () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="general" />);
 
-    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.getByText("Auto-restart Matrix Host")).toBeInTheDocument();
     expect(screen.queryByText("Capabilities")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Host" }));

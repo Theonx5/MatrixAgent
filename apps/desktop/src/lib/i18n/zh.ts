@@ -73,10 +73,10 @@ export const zh: Record<MessageKey, string> = {
 
   // Startup
   startupPreparing: "正在准备 PaperMatrix",
-  startupStartingHost: "正在启动 Pi Host",
+  startupStartingHost: "正在启动 Matrix Host",
   startupRestoringWorkspace: "正在恢复工作区",
   startupRestoringSession: "正在恢复会话",
-  startupReconnecting: "正在重新连接 Pi Host",
+  startupReconnecting: "正在重新连接 Matrix Host",
   startupReady: "准备完成",
 
   // Settings shell
@@ -100,7 +100,7 @@ export const zh: Record<MessageKey, string> = {
   appearanceInterfaceGroup: "界面",
   appearanceThemeFamily: "主题风格",
   appearanceThemeFamilyDesc: "选择 PaperMatrix 使用的视觉语言。",
-  appearanceThemePideck: "PiDeck",
+  appearanceThemePideck: "PaperMatrix",
   appearanceThemeVercel: "Vercel",
   appearanceThemeApple: "Apple",
   appearanceColorMode: "颜色模式",
@@ -130,11 +130,11 @@ export const zh: Record<MessageKey, string> = {
   generalConversationWidthError: "请输入不小于 {min}px 的整数。",
 
   // General
-  generalSubtitle: "启动行为与 Pi Host 配置",
+  generalSubtitle: "启动行为与 Matrix Host 配置",
   generalStartupGroup: "启动",
   generalRestoreSession: "恢复上次会话",
   generalRestoreSessionDesc: "启动 PaperMatrix 时重新打开上次的工作区和对话。",
-  generalAutoRestart: "自动重启 Pi Host",
+  generalAutoRestart: "自动重启 Matrix Host",
   generalAutoRestartDesc: "主机进程崩溃时先自动重启一次，仍失败才提示错误。",
   generalBusySendGroup: "智能体运行中",
   generalBusySend: "运行中发送",
@@ -161,13 +161,13 @@ export const zh: Record<MessageKey, string> = {
   generalDetectShells: "重新检测 Shell",
   generalAdvancedGroup: "更多设置",
   generalAdvancedDesc:
-    "Pi 会从 agent 目录下的 settings.json 读取高级选项,例如 httpProxy、compaction、retry、npmCommand。可打开文件手动编辑。",
+    "Matrix 会从 agent 目录下的 settings.json 读取高级选项,例如 httpProxy、compaction、retry、npmCommand。可打开文件手动编辑。",
   generalAdvancedOpenFile: "打开 settings.json",
   generalAdvancedRestartHint: "更改将在重启 Host 后生效。",
   notifSettingsFileOpenFailed: "无法打开设置文件",
 
   // Host section
-  hostSubtitle: "Pi Host 运行时、能力与应用信息",
+  hostSubtitle: "Matrix Host 运行时、能力与应用信息",
   hostRuntimeGroup: "运行时",
   hostPhase: "阶段",
   hostAgentDir: "Agent 目录",
@@ -178,7 +178,7 @@ export const zh: Record<MessageKey, string> = {
   hostChangeAgentDir: "更换 Agent 目录…",
   hostRestart: "重启 Host",
   hostRestartCaption: "会立即停止进行中的对话并重新连接。",
-  hostRestartDialogTitle: "重启 Pi Host？",
+  hostRestartDialogTitle: "重启 Matrix Host？",
   hostRestartDialogBody: "进行中的对话会被立即停止；Host 就绪后会话将自动重连。",
   hostCapabilitiesGroup: "能力",
   hostCapPackageUpdateCheck: "包更新检查",
@@ -198,7 +198,7 @@ export const zh: Record<MessageKey, string> = {
   notifUpdateAvailable: "发现新版本 {version}——可在 设置 → 主机 中安装",
   notifUpdateCheckFailed: "检查更新失败",
   notifUpdateInstallFailed: "安装更新失败",
-  notifAgentDirChanged: "Agent 目录已更改——重启 Pi Host 后生效",
+  notifAgentDirChanged: "Agent 目录已更改——重启 Matrix Host 后生效",
   notifAgentDirOpenFailed: "打开 Agent 目录失败",
   notifAgentDirChangeFailed: "更换 Agent 目录失败",
   notifHostRestarted: "Host 已重启——等待就绪…",
@@ -382,7 +382,7 @@ export const zh: Record<MessageKey, string> = {
   notifProviderDisabled: "已禁用 {name}",
   notifProviderDeleted: "已删除模型服务",
   notifProviderRestartRequired:
-    "保存模型列表 URL 或兼容性覆盖前需要重启 Pi Host。请在「主机」设置中重启后再保存。",
+    "保存模型列表 URL 或兼容性覆盖前需要重启 Matrix Host。请在「主机」设置中重启后再保存。",
 
   // Packages
   packagesViewGroup: "包管理视图",
@@ -453,7 +453,7 @@ export const zh: Record<MessageKey, string> = {
   packagesIdentity: "标识",
   packagesTypeVersion: "类型与版本",
   packagesInstalledPath: "安装路径",
-  packagesManagedByPi: "由 Pi 管理",
+  packagesManagedByPi: "由 Matrix 管理",
   packagesRelationshipsGroup: "关联关系",
   packagesReplacedByProjectLabel: "被项目替代：",
   packagesOverridesUserLabel: "覆盖用户包：",
@@ -541,7 +541,7 @@ export const zh: Record<MessageKey, string> = {
   sidebarCollapse: "收起侧栏",
   sidebarSplitResize: "调整工作区与对话列表高度",
   sidebarHostOffline: "Host 离线",
-  sidebarConnecting: "正在连接 Pi Host",
+  sidebarConnecting: "正在连接 Matrix Host",
   sidebarResync: "正在与 Host 重新同步",
   sidebarLoadingSnapshots: "正在加载 Host 快照",
   notifCreateSessionFailed: "创建会话失败",
@@ -636,7 +636,7 @@ export const zh: Record<MessageKey, string> = {
 
   // Transcript
   transcriptShowEarlier: "显示更早的消息（已隐藏 {count} 条）",
-  transcriptPiWorking: "Pi 正在处理...",
+  transcriptPiWorking: "Matrix 正在处理...",
   transcriptJumpLatest: "跳到最新消息",
   transcriptThinkingJumpLatest: "回到最新思考",
   transcriptAttachmentAlt: "附件",
@@ -766,7 +766,7 @@ export const zh: Record<MessageKey, string> = {
   composerRemoveNamedFile: "移除 {name}",
   composerRemoveImage: "移除图片",
   composerUnavailable: "对话不可用",
-  composerPlaceholder: "给 Pi 发消息  ( / 命令 · @ 文件 )",
+  composerPlaceholder: "给 Matrix 发消息  ( / 命令 · @ 文件 )",
   composerDecisionPending: "请先回答上方的扩展问题，再发送消息。",
   composerAttach: "添加 PDF、DOCX、图片或文本文件",
   composerQueueMessageShortcut: "消息加入队列（Enter）",

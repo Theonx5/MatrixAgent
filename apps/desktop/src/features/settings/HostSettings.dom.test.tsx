@@ -87,14 +87,14 @@ describe("HostSettings", () => {
     render(<HostSettings />);
 
     await user.click(screen.getByRole("button", { name: "Restart Host" }));
-    const dialog = screen.getByRole("dialog", { name: "Restart Pi Host?" });
+    const dialog = screen.getByRole("dialog", { name: "Restart Matrix Host?" });
     expect(dialog).toHaveTextContent("Any running agent turn is stopped immediately");
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(invokeMock).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Restart Host" }));
-    const reopened = screen.getByRole("dialog", { name: "Restart Pi Host?" });
+    const reopened = screen.getByRole("dialog", { name: "Restart Matrix Host?" });
     await user.click(within(reopened).getByRole("button", { name: "Restart Host" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("pi_host_restart"));
   });
@@ -224,7 +224,7 @@ describe("HostSettings", () => {
     expect(
       useAppStore
         .getState()
-        .notifications.some((item) => item.message.includes("restart Pi Host to apply")),
+        .notifications.some((item) => item.message.includes("restart Matrix Host to apply")),
     ).toBe(true);
   });
 });
