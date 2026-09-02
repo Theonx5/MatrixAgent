@@ -81,11 +81,7 @@ export function Sidebar() {
   return <SidebarLayout page={page} />;
 }
 
-export function SidebarLayout({
-  page,
-}: {
-  page: NavPage;
-}) {
+export function SidebarLayout({ page }: { page: NavPage }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const hostFatal = useAppStore((s) => s.hostFatal);

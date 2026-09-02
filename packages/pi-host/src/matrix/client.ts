@@ -486,7 +486,9 @@ function parseManifestPayload(payload: unknown, page: number): PaperMatrixManife
     throw new MatrixHttpError(500, "Manifest response was invalid");
   }
   const raw = unwrapRecord(payload);
-  const collections = (asArray(raw.collections) ?? asArray(raw.folders) ?? []).map(normalizeCollection);
+  const collections = (asArray(raw.collections) ?? asArray(raw.folders) ?? []).map(
+    normalizeCollection,
+  );
   const items = extractRawItems(raw, payload).map((item) => normalizeItem(item));
   return {
     generated_at: pickString(raw.generated_at) ?? pickString(raw.generatedAt) ?? "",
@@ -554,10 +556,15 @@ function normalizeItem(raw: unknown, folderName?: string | null): PaperMatrixIte
     pickString(record.asset_id) ??
     pickString(record.assetId);
   const folders = asStringList(
-    record.folders ?? record.collections ?? record.collection_names ?? record.__folder ?? folderName,
+    record.folders ??
+      record.collections ??
+      record.collection_names ??
+      record.__folder ??
+      folderName,
   );
   const inlineMd = extractMarkdown(record);
-  const bibtex = pickString(record.bibtex) ?? pickString(record.bibTeX) ?? pickString(record.BibTeX);
+  const bibtex =
+    pickString(record.bibtex) ?? pickString(record.bibTeX) ?? pickString(record.BibTeX);
   const images = normalizeImages(nestedAsset?.images ?? record.images);
   return {
     dedup_key: dedup,
@@ -606,12 +613,19 @@ function normalizeImageFile(entry: unknown): PaperMatrixImageFile | null {
 function normalizeImages(raw: unknown): PaperMatrixImages | undefined {
   if (raw == null) return undefined;
   if (Array.isArray(raw)) {
-    const files = raw.map(normalizeImageFile).filter((entry): entry is PaperMatrixImageFile => entry !== null);
+    const files = raw
+      .map(normalizeImageFile)
+      .filter((entry): entry is PaperMatrixImageFile => entry !== null);
     return { files, total_size: files.reduce((sum, file) => sum + file.size, 0) };
   }
   if (typeof raw !== "object") return undefined;
   const record = raw as Record<string, unknown>;
-  const files = (asArray(record.files) ?? asArray(record.image_files) ?? asArray(record.items) ?? [])
+  const files = (
+    asArray(record.files) ??
+    asArray(record.image_files) ??
+    asArray(record.items) ??
+    []
+  )
     .map(normalizeImageFile)
     .filter((entry): entry is PaperMatrixImageFile => entry !== null);
   const flagged = record.has_images === true || record.hasImages === true;

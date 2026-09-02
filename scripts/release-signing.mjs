@@ -66,7 +66,12 @@ export function ensureWindowsCodeSigningCert() {
     `}`,
     `$existing.Thumbprint`,
   ].join("; ");
-  const result = spawnCapture("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
+  const result = spawnCapture("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    script,
+  ]);
   const thumbprint = (result.stdout || "").trim().split(/\r?\n/u).filter(Boolean).at(-1);
   if (result.status !== 0 || !thumbprint || !/^[0-9A-Fa-f]{40}$/u.test(thumbprint)) {
     throw new Error(
@@ -108,7 +113,14 @@ export function signWindowsPe(filePath, thumbprint) {
       (signed.stderr || signed.stdout || "").trim().slice(0, 400),
     );
   }
-  const unsignedTs = spawnCapture(signtool, ["sign", "/fd", "SHA256", "/sha1", thumbprint, filePath]);
+  const unsignedTs = spawnCapture(signtool, [
+    "sign",
+    "/fd",
+    "SHA256",
+    "/sha1",
+    thumbprint,
+    filePath,
+  ]);
   if (unsignedTs.status !== 0) {
     throw new Error(
       `signtool failed: ${(unsignedTs.stderr || unsignedTs.stdout || "").trim() || unsignedTs.status}`,
@@ -124,13 +136,16 @@ export function verifyWindowsPe(filePath) {
     `Write-Output ("THUMBPRINT=" + $sig.SignerCertificate.Thumbprint)`,
     `Write-Output ("SUBJECT=" + $sig.SignerCertificate.Subject)`,
   ].join("; ");
-  const result = spawnCapture("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
+  const result = spawnCapture("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    script,
+  ]);
   const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
   const status = output.match(/^STATUS=(.+)$/m)?.[1]?.trim() ?? "";
   const thumbprint = output.match(/^THUMBPRINT=(.+)$/m)?.[1]?.trim() ?? "";
   const trusted = status === "Valid";
-  const signed =
-    Boolean(thumbprint) && status !== "NotSigned" && status !== "HashMismatch";
+  const signed = Boolean(thumbprint) && status !== "NotSigned" && status !== "HashMismatch";
   return { ok: signed, trusted, status, thumbprint, output };
 }
-
