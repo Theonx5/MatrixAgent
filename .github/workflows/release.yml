@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
       - uses: actions/setup-node@v5
@@ -156,7 +156,7 @@ jobs:
       - name: Stage accepted platform assets
         shell: bash
         run: node scripts/generate-update-manifest.mjs --stage-platform --tag "$RELEASE_TAG"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: release-platform-${{ matrix.id }}
           path: apps/desktop/src-tauri/target/release-staging/github-release-platform
@@ -175,7 +175,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-platform-*
           path: release-input
