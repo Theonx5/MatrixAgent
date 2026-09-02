@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
-"""发布装配脚本：从构建产物目录生成 latest.json 并装配服务端分发目录。
+"""Matrix Agent 发布脚本：从构建产物目录生成 latest.json 并装配分发目录。
+
+Tauri updater 约定：latest.json 列出当前版本各平台的更新包 URL 与 minisign 签名，
+客户端比对版本号后下载、验签、安装。本脚本负责把 tauri-action 的产物（.exe/.app.tar.gz
++ .sig）装配成服务端 {MATRIX_AGENT_DIST_DIR} 的磁盘布局：
+
+    {target}/latest.json
+    {target}/v{version}/MatrixAgent_*_x64-setup.exe        Windows 10/11 首装+更新
+    {target}/v{version}/MatrixAgent_*_aarch64.dmg          macOS Apple Silicon 首装
+    {target}/v{version}/MatrixAgent_*_aarch64.app.tar.gz   macOS Apple Silicon 更新
+
+用法（本地手动发布，或 GitHub Actions publish job 内调用）：
+
+    python3 publish.py \
+        --artifacts <tauri 构建产物目录> \
+        --version 1.2.0 \
+        --base-url https://papermatrix.online \
+        --target /home/theonx/servers-PaperDownload-prod/matrix-agent_dist \
+        [--notes "更新说明（可多行）"]
 
 平台归类规则（按文件名小写匹配）：
     *.exe                          -> windows-x86_64
@@ -39,7 +57,7 @@ def main() -> int:
     ap.add_argument("--artifacts", required=True, help="tauri 构建产物目录")
     ap.add_argument("--version", required=True, help="本次版本号，如 1.2.0")
     ap.add_argument("--base-url", required=True, help="服务端基址，如 https://papermatrix.online")
-    ap.add_argument("--target", required=True, help="服务端分发目录")
+    ap.add_argument("--target", required=True, help="服务端分发目录（backend config 的 MATRIX_AGENT_DIST_DIR）")
     ap.add_argument("--notes", default="", help="更新说明，写入 latest.json 供客户端展示")
     args = ap.parse_args()
 

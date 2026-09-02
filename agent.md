@@ -145,6 +145,7 @@ Settings → Secrets and variables → Actions → **Repository secrets**：
 | `DEPLOY_SERVER_HOST` | 同上 | 公网可达的 SSH 主机 |
 | `DEPLOY_SERVER_USER` | 同上 | 例如 `theonx` |
 | `DEPLOY_DIST_DIR` | 同上 | 例如 `/home/theonx/servers-PaperDownload-prod/matrix-agent_dist` |
+| `DEPLOY_SSH_PORT` | 可空 | 非 22 时填写，例如 frp 映射端口；缺省 22 |
 
 公钥在 `apps/desktop/src-tauri/tauri.conf.json` 的
 `plugins.updater.pubkey`。客户端启动时向

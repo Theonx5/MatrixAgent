@@ -91,7 +91,8 @@ GitHub. Intel macOS is not built. The Apple credential set is all-or-nothing:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and `KEYCHAIN_PASSWORD`.
 Server publish also needs `DEPLOY_SSH_KEY`, `DEPLOY_SERVER_HOST`,
-`DEPLOY_SERVER_USER`, and `DEPLOY_DIST_DIR`.
+`DEPLOY_SERVER_USER`, and `DEPLOY_DIST_DIR`. Optional `DEPLOY_SSH_PORT`
+overrides SSH port 22 (for example an frp mapping).
 
 ## Tracked Draft-Release Workflow
 

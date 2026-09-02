@@ -211,6 +211,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
     steps:
       # 国内直连 GitHub Release 不稳且草稿 Release 资产免登录不可下载，
       # 客户端 updater 端点在 papermatrix.online，故把产物回流到自建服务器。
@@ -236,9 +237,9 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.DEPLOY_SERVER_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$SSH_PORT" -H "${{ secrets.DEPLOY_SERVER_HOST }}" >> ~/.ssh/known_hosts
           # 只增不删：旧版本目录保留，支持回滚
-          rsync -avz dist/ "${{ secrets.DEPLOY_SERVER_USER }}@${{ secrets.DEPLOY_SERVER_HOST }}:${{ secrets.DEPLOY_DIST_DIR }}/"
+          rsync -avz -e "ssh -p $SSH_PORT" dist/ "${{ secrets.DEPLOY_SERVER_USER }}@${{ secrets.DEPLOY_SERVER_HOST }}:${{ secrets.DEPLOY_DIST_DIR }}/"
       - name: Self check
         run: |
           VERSION="${RELEASE_TAG#v}"
