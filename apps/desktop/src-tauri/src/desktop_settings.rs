@@ -485,13 +485,15 @@ fn packaged_install_dir() -> Option<PathBuf> {
     }
     #[cfg(windows)]
     {
-        return std::env::current_exe().ok().and_then(|exe| {
+        std::env::current_exe().ok().and_then(|exe| {
             exe.parent()
                 .map(|dir| strip_verbatim_prefix(dir.to_path_buf()))
-        });
+        })
     }
     #[cfg(not(windows))]
-    None
+    {
+        None
+    }
 }
 
 fn default_library_dir(agent_dir: &Path) -> PathBuf {
