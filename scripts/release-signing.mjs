@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-export const UPDATER_KEY_REL = "apps/desktop/src-tauri/.tauri-updater.key";
+const UPDATER_KEY_REL = "apps/desktop/src-tauri/.tauri-updater.key";
 const DEV_CERT_SUBJECT = "CN=PaperMatrix";
 
 function spawnCapture(command, args, options = {}) {
@@ -33,7 +33,7 @@ export function applyUpdaterSigningEnv(root, env = process.env) {
   return { applied: true, source: keyPath };
 }
 
-export function findSignTool() {
+function findSignTool() {
   const where = spawnCapture("where.exe", ["signtool"]);
   if (where.status === 0) {
     const first = (where.stdout || "")

@@ -9,7 +9,7 @@ export function isExternalPiAgentDir(dir: string): boolean {
   return normalized.endsWith("/.pi/agent") || normalized.includes("/.pi/agent/");
 }
 
-export function defaultMatrixAgentDir(home = homedir()): string {
+function defaultMatrixAgentDir(home = homedir()): string {
   return join(home, ".MatrixAgent");
 }
 

@@ -24,12 +24,12 @@ type PaperMatrixCollection = {
   sort_order: number;
 };
 
-export type PaperMatrixImageFile = {
+type PaperMatrixImageFile = {
   name: string;
   size: number;
 };
 
-export type PaperMatrixImages = {
+type PaperMatrixImages = {
   files: PaperMatrixImageFile[];
   total_size: number;
 };

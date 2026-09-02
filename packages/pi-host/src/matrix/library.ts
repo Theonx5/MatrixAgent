@@ -117,7 +117,7 @@ async function writeIfMissing(path: string, content: string): Promise<void> {
   }
 }
 
-export function resolveBundledSkillsRoot(fromFile = import.meta.url): string | undefined {
+function resolveBundledSkillsRoot(fromFile = import.meta.url): string | undefined {
   const here = dirname(fileURLToPath(fromFile));
   return [join(here, "../resources/skills"), join(here, "../../resources/skills")].find((path) =>
     existsSync(path),
