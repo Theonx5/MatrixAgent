@@ -21,15 +21,11 @@
  * `ModelsError` with code "auth" rather than silently degrading.
  */
 import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
-import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { chmod, copyFile, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import lockfile from "proper-lockfile";
-import type {
-  Credential,
-  CredentialInfo,
-  CredentialStore,
-} from "@earendil-works/pi-ai";
+import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { resolveCredentialConfigValue } from "./credential-config-value.js";
 import { logger } from "./logger.js";
 
@@ -103,6 +99,15 @@ function errnoCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
     ? String((error as NodeJS.ErrnoException).code)
     : undefined;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isReplaceBusyError(error: unknown): boolean {
+  const code = errnoCode(error);
+  return code === "EPERM" || code === "EEXIST" || code === "EACCES";
 }
 
 export class FileCredentialStore implements CredentialStore {
@@ -214,11 +219,9 @@ export class FileCredentialStore implements CredentialStore {
 
   async restore(snapshot: CredentialSnapshot): Promise<void> {
     if (snapshot.path !== this.authPath) {
-      throw new CredentialStoreError(
-        "io",
-        "Credential snapshot belongs to a different auth file",
-        { path: this.authPath },
-      );
+      throw new CredentialStoreError("io", "Credential snapshot belongs to a different auth file", {
+        path: this.authPath,
+      });
     }
     await this.withLock(async () => {
       if (snapshot.content === null) {
@@ -291,13 +294,39 @@ export class FileCredentialStore implements CredentialStore {
     try {
       // `open` honours the mode only when it creates the file; enforce it for
       // umask-restricted and pre-existing cases alike.
-      await chmod(tempPath, FILE_MODE);
-      await rename(tempPath, this.authPath);
+      if (process.platform !== "win32") await chmod(tempPath, FILE_MODE);
+      await this.replaceAuthFile(tempPath);
     } catch (error) {
       await unlink(tempPath).catch(() => undefined);
       throw this.ioError("rename", error);
     }
     await this.syncParentDir();
+  }
+
+  /**
+   * Windows cannot always rename over an existing auth.json (Defender / EPERM).
+   * Unlink the destination and retry, then copy as a last resort.
+   */
+  private async replaceAuthFile(tempPath: string): Promise<void> {
+    const attempts = process.platform === "win32" ? 8 : 2;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        await rename(tempPath, this.authPath);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!isReplaceBusyError(error)) throw error;
+        await unlink(this.authPath).catch(() => undefined);
+        if (attempt < attempts - 1) await sleep(15 * 2 ** attempt);
+      }
+    }
+    try {
+      await copyFile(tempPath, this.authPath);
+      await unlink(tempPath).catch(() => undefined);
+    } catch {
+      throw lastError;
+    }
   }
 
   private async ensureParentDir(): Promise<void> {
