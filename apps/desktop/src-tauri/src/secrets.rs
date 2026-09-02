@@ -88,7 +88,9 @@ mod imp {
             String::from_utf8(blob.to_vec())
         };
         unsafe { CredFree(cred.cast()) };
-        result.map(Some).map_err(|_| "stored password was not UTF-8".into())
+        result
+            .map(Some)
+            .map_err(|_| "stored password was not UTF-8".into())
     }
 
     pub fn delete(target: &str) -> Result<(), String> {

@@ -1,11 +1,11 @@
 mod browser_surface;
 mod commands;
 mod desktop_settings;
-mod secrets;
 mod draft_store;
 mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
+mod secrets;
 mod shell_terminal;
 mod system_tray;
 

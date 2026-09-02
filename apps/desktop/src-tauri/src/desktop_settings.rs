@@ -455,9 +455,7 @@ impl DesktopSettingsStore {
             .as_deref()
             .is_some_and(looks_like_external_pi_agent_path)
         {
-            return Err(
-                "Matrix Agent cannot use the Pi CLI directory (~/.pi/agent)".into(),
-            );
+            return Err("Matrix Agent cannot use the Pi CLI directory (~/.pi/agent)".into());
         }
         sanitize_external_pi_settings(&mut next);
         self.write_settings(&next)?;
@@ -587,9 +585,9 @@ fn rewrite_workspace_path(settings: &mut DesktopSettings, from: &Path, to: &Path
 
 fn copy_dir_all(source: &Path, dest: &Path) -> Result<(), String> {
     create_private_directory(dest)?;
-    for entry in fs::read_dir(source).map_err(|error| {
-        format!("read directory {}: {error}", source.display())
-    })? {
+    for entry in fs::read_dir(source)
+        .map_err(|error| format!("read directory {}: {error}", source.display()))?
+    {
         let entry = entry.map_err(|error| error.to_string())?;
         let file_type = entry.file_type().map_err(|error| error.to_string())?;
         let target = dest.join(entry.file_name());
@@ -597,7 +595,11 @@ fn copy_dir_all(source: &Path, dest: &Path) -> Result<(), String> {
             copy_dir_all(&entry.path(), &target)?;
         } else {
             fs::copy(entry.path(), &target).map_err(|error| {
-                format!("copy {} -> {}: {error}", entry.path().display(), target.display())
+                format!(
+                    "copy {} -> {}: {error}",
+                    entry.path().display(),
+                    target.display()
+                )
             })?;
         }
     }
@@ -626,9 +628,8 @@ fn relocate_directory(source: &Path, dest: &Path) -> Result<(), String> {
                 || error.raw_os_error() == Some(17) =>
         {
             copy_dir_all(source, dest)?;
-            fs::remove_dir_all(source).map_err(|error| {
-                format!("remove moved library {}: {error}", source.display())
-            })?;
+            fs::remove_dir_all(source)
+                .map_err(|error| format!("remove moved library {}: {error}", source.display()))?;
             Ok(())
         }
         Err(error) => Err(format!(
@@ -662,8 +663,7 @@ fn seed_matrix_library_root(
         .get("libraryRoot")
         .and_then(|value| value.as_str())
         .unwrap_or("");
-    let matches_legacy =
-        replace_legacy.is_some_and(|legacy| same_path(Path::new(current), legacy));
+    let matches_legacy = replace_legacy.is_some_and(|legacy| same_path(Path::new(current), legacy));
     if !current.trim().is_empty() && !matches_legacy {
         return Ok(());
     }
@@ -717,7 +717,10 @@ fn sanitize_external_pi_settings(settings: &mut DesktopSettings) -> bool {
         &mut settings.last_workspace,
         &mut settings.last_session_path,
     ] {
-        if field.as_deref().is_some_and(looks_like_external_pi_agent_path) {
+        if field
+            .as_deref()
+            .is_some_and(looks_like_external_pi_agent_path)
+        {
             *field = None;
             changed = true;
         }
@@ -1234,7 +1237,10 @@ mod tests {
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         assert_eq!(loaded.settings.agent_dir, None);
         assert_eq!(loaded.settings.last_workspace, None);
-        assert_eq!(loaded.settings.known_workspaces, vec!["D:/papers".to_string()]);
+        assert_eq!(
+            loaded.settings.known_workspaces,
+            vec!["D:/papers".to_string()]
+        );
         assert!(loaded
             .snapshot()
             .warning
