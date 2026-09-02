@@ -28,7 +28,7 @@ function ready(hostInstanceId: string): string {
     payload: {
       protocolVersion: 1,
       ...identity(hostInstanceId),
-      sdkVersion: "0.84.2",
+      sdkVersion: "0.84.4",
       nodeVersion: process.version,
       agentDir: "/agent",
       phase: "waitingForWorkspace",

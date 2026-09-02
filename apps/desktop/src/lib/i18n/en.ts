@@ -282,7 +282,7 @@ export const en = {
   providersSelectHint: "Select or add a Provider",
   providersLoginSection: "Built-in accounts",
   providersLoginPageSubtitle:
-    "Sign in to built-in Providers with OAuth or an API key. Credentials are shared with the pi CLI.",
+    "Sign in to built-in Providers with OAuth or an API key. Credentials stay in ~/.MatrixAgent.",
   providersAddChoiceOauth: "OAuth sign-in",
   providersAddChoiceOauthHint: "Anthropic, OpenAI, Copilot, and other built-in accounts",
   providersAddChoiceCustom: "Custom Provider",

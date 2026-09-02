@@ -1,5 +1,7 @@
 # Pi SDK 0.82.1 → 0.84.2 升级计划（执行稿）
 
+> **后续：** 当前钉 [`0.84.4`](./pi-sdk-0.84.4-upgrade.md)。本文保留为 0.82.1 → 0.84.2 的执行记录。
+>
 > **状态：** 2026-08-20 外部 Review 结论为 **Accept with changes**。本文件是实施唯一权威稿。Cut 1 与 Cut 2 均已落地，且 Windows 权威门（`verify:quick` / build / rust / clippy / sidecar / staged smoke）已绿。SDK 钉 `0.84.2`；残留 patch 为 invocation ownership + Windows `shell.js`。产品版本 `0.2.2`。工作区尚未提交。
 > 历史手顺（不要当本次 playbook）：[`pi-sdk-0.82.1-handoff.md`](./pi-sdk-0.82.1-handoff.md)、[`pi-sdk-0.82.1-api-notes.md`](./pi-sdk-0.82.1-api-notes.md)。
 > 审计笔记：仓库根 `findings.md`。任务切片：仓库根 `task_plan.md`。

@@ -1444,7 +1444,7 @@ export function createAgentHandlers(
           }
 
           signal.throwIfAborted();
-          await g.agentSession.setModel(model);
+          await g.agentSession.setModel(model, { persist: true });
           const identity = server.getIdentity();
           const snap = buildSessionSnapshot({
             session: g.agentSession,
@@ -1486,7 +1486,7 @@ export function createAgentHandlers(
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
       const params = ctx.params as { level: string };
-      g.agentSession.setThinkingLevel(params.level as never);
+      g.agentSession.setThinkingLevel(params.level as never, { persist: true });
       const snap = buildSessionSnapshot({
         session: g.agentSession,
         sessionManager: g.sessionManager!,

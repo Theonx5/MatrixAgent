@@ -40,11 +40,16 @@ not call Paper Matrix.
 ## Local library
 
 Default agent directory is `~/.MatrixAgent`, isolated from the Pi CLI's
-`~/.pi/agent`. On packaged Windows, the default library root is
-`<installDir>/library` (next to `pideck.exe`). Dev builds and non-Windows
-default to `<agentDir>/library`. First-run Desktop workspaces use that
-directory. A previous default at `<agentDir>/library` is relocated when the
-app starts; custom `knownWorkspaces` are left alone.
+`~/.pi/agent`. Leftover Desktop settings that still point at the CLI directory
+are rewritten silently: Matrix Agent forgets that agent dir and any workspaces
+recorded while sharing it, then first-run uses the Matrix library instead of a
+Pi CLI project. The Host child does not inherit `PI_CODING_AGENT_SESSION_DIR`,
+`PI_CODING_AGENT`, or `PI_PACKAGE_DIR`. On packaged Windows, the default
+library root is `<installDir>/library` (next to `pideck.exe`). Dev builds and
+non-Windows default to `<agentDir>/library`. First-run Desktop workspaces use
+that directory. A previous default at `<agentDir>/library` is relocated when
+the app starts; custom `knownWorkspaces` that are not under `~/.pi/agent` are
+left alone when the agent dir is already isolated.
 
 Layout: collection folders of Markdown papers, a sibling `images/` directory for
 parsed figures, per-collection `<folder>.bib` files at the library root,

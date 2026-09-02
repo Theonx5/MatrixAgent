@@ -218,16 +218,9 @@ impl DesktopSettingsStore {
                 let store = Self {
                     path,
                     settings,
-                    warning: if scrubbed {
-                        Some(
-                            "Ignored a Pi CLI directory (~/.pi/agent); Matrix Agent uses ~/.MatrixAgent"
-                                .into(),
-                        )
-                    } else {
-                        legacy.then(|| {
-                            "Desktop settings were migrated to the current versioned format".into()
-                        })
-                    },
+                    warning: legacy.then(|| {
+                        "Desktop settings were migrated to the current versioned format".into()
+                    }),
                     recovered_from: None,
                 };
                 if legacy || scrubbed {
@@ -705,15 +698,22 @@ fn looks_like_external_pi_agent_path(value: &str) -> bool {
 }
 
 fn sanitize_external_pi_settings(settings: &mut DesktopSettings) -> bool {
-    let mut changed = false;
     if settings
         .agent_dir
         .as_deref()
         .is_some_and(looks_like_external_pi_agent_path)
     {
+        // Sharing the Pi CLI directory also recorded that CLI's projects as
+        // Desktop workspaces. Forget the whole set so first launch uses the
+        // Matrix library instead of inheriting a coding-agent cwd.
         settings.agent_dir = None;
-        changed = true;
+        settings.default_workspace = None;
+        settings.last_workspace = None;
+        settings.last_session_path = None;
+        settings.known_workspaces.clear();
+        return true;
     }
+    let mut changed = false;
     for field in [
         &mut settings.default_workspace,
         &mut settings.last_workspace,
@@ -1212,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn forgets_external_pi_agent_paths_on_load() {
+    fn forgets_a_cli_agent_dir_and_its_workspaces_without_warning() {
         let dir = test_dir("scrub-pi-agent");
         fs::write(
             dir.join(SETTINGS_FILE_NAME),
@@ -1225,6 +1225,39 @@ mod tests {
                     "extensionDecisionPresentation": "legacy-modal",
                     "terminalProfile": "auto",
                     "agentDir": "C:/Users/me/.pi/agent",
+                    "lastWorkspace": "C:/repo",
+                    "knownWorkspaces": [
+                        "C:/Users/me/.pi/agent/library",
+                        "C:/repo"
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(loaded.settings.agent_dir, None);
+        assert_eq!(loaded.settings.last_workspace, None);
+        assert!(loaded.settings.known_workspaces.is_empty());
+        assert_eq!(loaded.snapshot().warning, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn drops_cli_workspace_paths_when_agent_dir_is_already_isolated() {
+        let dir = test_dir("scrub-pi-workspace-only");
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            serde_json::json!({
+                "schemaVersion": SETTINGS_SCHEMA_VERSION,
+                "settings": {
+                    "theme": "system",
+                    "restoreLastSession": true,
+                    "autoRestartHostOnce": true,
+                    "extensionDecisionPresentation": "legacy-modal",
+                    "terminalProfile": "auto",
+                    "agentDir": "C:/Users/me/.MatrixAgent",
                     "lastWorkspace": "C:/Users/me/.pi/agent/library",
                     "knownWorkspaces": [
                         "C:/Users/me/.pi/agent/library",
@@ -1237,17 +1270,50 @@ mod tests {
         .unwrap();
 
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert_eq!(loaded.settings.agent_dir, None);
+        assert_eq!(
+            loaded.settings.agent_dir.as_deref(),
+            Some("C:/Users/me/.MatrixAgent")
+        );
         assert_eq!(loaded.settings.last_workspace, None);
         assert_eq!(
             loaded.settings.known_workspaces,
             vec!["D:/papers".to_string()]
         );
-        assert!(loaded
-            .snapshot()
-            .warning
-            .unwrap()
-            .contains("Pi CLI directory"));
+        assert_eq!(loaded.snapshot().warning, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn default_library_after_forgetting_a_cli_agent_dir() {
+        let dir = test_dir("cli-then-library");
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            serde_json::json!({
+                "schemaVersion": SETTINGS_SCHEMA_VERSION,
+                "settings": {
+                    "theme": "system",
+                    "restoreLastSession": true,
+                    "autoRestartHostOnce": true,
+                    "extensionDecisionPresentation": "legacy-modal",
+                    "terminalProfile": "auto",
+                    "agentDir": "C:/Users/me/.pi/agent",
+                    "lastWorkspace": "C:/repo"
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let mut loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        let agent_dir = dir.join("agent");
+        loaded.settings.agent_dir = Some(agent_dir.to_string_lossy().into_owned());
+        let project = loaded.ensure_default_project_workspace().unwrap();
+        let expected = agent_dir.join(DEFAULT_PROJECT_DIR_NAME);
+        assert_eq!(project, Some(expected.clone()));
+        assert_eq!(
+            loaded.settings.last_workspace.as_deref(),
+            Some(expected.to_string_lossy().as_ref())
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

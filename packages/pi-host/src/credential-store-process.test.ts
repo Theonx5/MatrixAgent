@@ -4,7 +4,7 @@
  * The in-process promise chain cannot prove anything here: these tests run the
  * store in separate Node processes, so only the `proper-lockfile` advisory lock
  * around the read-modify-write can prevent lost updates. That is the case that
- * matters in production, where PiDeck and the Pi CLI share `~/.pi/agent`.
+ * matters in production, where Matrix Agent writes `~/.MatrixAgent/auth.json`.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawn } from "node:child_process";

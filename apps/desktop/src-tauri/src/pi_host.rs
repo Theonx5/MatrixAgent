@@ -1041,6 +1041,9 @@ impl PiHostManager {
             .map(|host_pkg| host_pkg.join("node_modules"));
         let node_path = node_modules.as_deref().filter(|path| path.exists());
         let bundled_bash = portable_git.as_deref().and_then(bundled_bash_from_git);
+        for key in host_child_removed_env() {
+            cmd.env_remove(key);
+        }
         for (key, value) in host_child_explicit_env(
             &agent_dir,
             &host_cache_dir,
@@ -1736,6 +1739,16 @@ pub(crate) fn node_runtime_candidates(base: &Path) -> [PathBuf; 2] {
 
 pub(crate) const PIDECK_BUNDLED_GIT: &str = "PIDECK_BUNDLED_GIT";
 pub(crate) const PIDECK_BUNDLED_BASH: &str = "PIDECK_BUNDLED_BASH";
+
+/// Pi CLI identity inherited from the desktop process. Matrix Agent always uses
+/// the bundled SDK and `~/.MatrixAgent` (or a user-chosen isolated directory).
+pub(crate) fn host_child_removed_env() -> &'static [&'static str] {
+    &[
+        "PI_CODING_AGENT_SESSION_DIR",
+        "PI_CODING_AGENT",
+        "PI_PACKAGE_DIR",
+    ]
+}
 
 /// Env vars explicitly set on the Host child. PATH is omitted so the process
 /// inherits the desktop user's PATH. Bundled Git/Bash are private descriptors

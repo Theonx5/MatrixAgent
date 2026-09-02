@@ -107,7 +107,7 @@ PiDeck 会自动检查并原地安装更新。
 
 ## 与 Pi CLI 协同,但不依赖它
 
-PiDeck 内置 Pi SDK(当前为 `0.84.2`)和独立的 Node 运行时,开箱即用:
+PiDeck 内置 Pi SDK(当前为 `0.84.4`)和独立的 Node 运行时,开箱即用:
 不需要全局安装 `pi` 命令行或 Node;Windows 版还内置了 Git。
 
 Matrix Agent 使用独立数据目录 `~/.MatrixAgent`，**不会**继承电脑上 Pi CLI 的

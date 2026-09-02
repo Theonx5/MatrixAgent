@@ -3,7 +3,7 @@ import { getInternalRuntime } from "../internal-runtime.js";
 import { spawnProcess, spawnProcessSync } from "./spawn-process.js";
 import { waitForChildProcess } from "./wait-for-child-process.js";
 
-const SUPPORTED_SDK_VERSIONS = new Set(["0.84.2"]);
+const SUPPORTED_SDK_VERSIONS = new Set(["0.84.4"]);
 const REQUIRED_METHODS = [
   "spawnCommand",
   "spawnCaptureCommand",

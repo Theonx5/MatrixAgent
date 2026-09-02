@@ -18,7 +18,7 @@ export function resolveIsolatedAgentDir(options: {
   argDir?: string | null;
   home?: string;
 }): string {
-  for (const candidate of [options.envDir, options.argDir]) {
+  for (const candidate of [options.argDir, options.envDir]) {
     const trimmed = candidate?.trim();
     if (trimmed && !isExternalPiAgentDir(trimmed)) return trimmed;
   }

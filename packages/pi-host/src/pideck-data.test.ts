@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -66,6 +59,23 @@ describe("isolated agent directory", () => {
       }),
     ).toBe("/tmp/test-agent");
   });
+
+  it("prefers an explicit --agent-dir over a leftover CLI environment", () => {
+    expect(
+      resolveIsolatedAgentDir({
+        envDir: "/home/me/.pi/agent",
+        argDir: "/home/me/.MatrixAgent",
+        home: "/home/me",
+      }),
+    ).toBe("/home/me/.MatrixAgent");
+    expect(
+      resolveIsolatedAgentDir({
+        envDir: "/tmp/from-env",
+        argDir: "/tmp/from-arg",
+        home: "/home/me",
+      }),
+    ).toBe("/tmp/from-arg");
+  });
 });
 
 describe("PiDeck data paths", () => {
@@ -108,7 +118,10 @@ describe("migrateLegacyPideckData", () => {
     await expect(migrateLegacyPideckData(agentDir, MIGRATION_ID)).resolves.toBeUndefined();
 
     expect(
-      readFileSync(join(migrationBackupRoot(agentDir, MIGRATION_ID), "snapshot", "manifest.json"), "utf8"),
+      readFileSync(
+        join(migrationBackupRoot(agentDir, MIGRATION_ID), "snapshot", "manifest.json"),
+        "utf8",
+      ),
     ).toBe("migration");
     expect(
       readFileSync(join(providerJournalRoot(agentDir), "journal-1", "journal.json"), "utf8"),
@@ -134,10 +147,16 @@ describe("migrateLegacyPideckData", () => {
     await migrateLegacyPideckData(agentDir, MIGRATION_ID);
 
     expect(
-      readFileSync(join(migrationBackupRoot(agentDir, MIGRATION_ID), "legacy-entry", "manifest.json"), "utf8"),
+      readFileSync(
+        join(migrationBackupRoot(agentDir, MIGRATION_ID), "legacy-entry", "manifest.json"),
+        "utf8",
+      ),
     ).toBe("legacy");
     expect(
-      readFileSync(join(migrationBackupRoot(agentDir, MIGRATION_ID), "new-entry", "manifest.json"), "utf8"),
+      readFileSync(
+        join(migrationBackupRoot(agentDir, MIGRATION_ID), "new-entry", "manifest.json"),
+        "utf8",
+      ),
     ).toBe("new");
     expect(existsSync(join(agentDir, "backups", MIGRATION_ID))).toBe(false);
   });

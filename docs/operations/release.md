@@ -82,10 +82,16 @@ approval in macOS Privacy & Security. A public macOS release requires a
 Developer ID Application certificate plus notarization credentials.
 
 The tag-triggered release workflow builds Windows x64 and macOS arm64
-(Apple Silicon). It aggregates their accepted assets into one `latest.json`
-and one GitHub Draft Release. Intel macOS is not built. The Apple credential set is all-or-nothing:
+(Apple Silicon). It aggregates their accepted assets into one GitHub Draft
+Release. A follow-on `publish-to-server` job downloads those draft assets,
+runs `scripts/publish.py`, and rsyncs `latest.json` plus `v{version}/` to
+`DEPLOY_DIST_DIR` so clients can fetch
+`https://papermatrix.online/api/updates/matrix-agent/latest.json` without
+GitHub. Intel macOS is not built. The Apple credential set is all-or-nothing:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and `KEYCHAIN_PASSWORD`.
+Server publish also needs `DEPLOY_SSH_KEY`, `DEPLOY_SERVER_HOST`,
+`DEPLOY_SERVER_USER`, and `DEPLOY_DIST_DIR`.
 
 ## Tracked Draft-Release Workflow
 
@@ -103,9 +109,10 @@ source files changed, or the JavaScript build outputs are missing. The
 resulting `PACKAGE_RELEASE.json` records `sourceCommit` and
 `reusedSourceBuildCommit`.
 
-This automation produces development candidates; it does not publish a
-supported release and does not replace the installed-app smoke, signature
-verification, or human acceptance requirements below.
+This automation produces development candidates and, when deploy secrets are
+set, publishes the updater feed to papermatrix.online. It does not replace
+installed-app smoke, signature verification, or human acceptance
+requirements below.
 
 ## Signing
 
@@ -129,7 +136,7 @@ Two signatures are involved:
 ```powershell
 pnpm sign:windows
 # or
-pnpm sign:windows path\to\PaperMatrix_0.2.2_x64-setup.exe
+pnpm sign:windows path\to\PaperMatrix_0.2.3_x64-setup.exe
 ```
 
 ## Public Release Requirements

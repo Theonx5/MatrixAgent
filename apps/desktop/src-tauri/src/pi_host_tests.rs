@@ -6,12 +6,12 @@ mod tests {
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
         build_shutdown_line, bundled_bash_from_git, drain_complete_lines, extract_host_instance_id,
-        finish_monitor_task, host_child_explicit_env, is_current_child_generation,
-        node_executable_name, node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line,
-        read_bounded_utf8_line, resolve_node_from_dirs, resolve_portable_git_from_dirs,
-        should_auto_restart, strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch,
-        HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
-        MAX_HOST_STDOUT_LINE_BYTES, PIDECK_BUNDLED_BASH, PIDECK_BUNDLED_GIT,
+        finish_monitor_task, host_child_explicit_env, host_child_removed_env,
+        is_current_child_generation, node_executable_name, node_runtime_candidates,
+        push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line, resolve_node_from_dirs,
+        resolve_portable_git_from_dirs, should_auto_restart, strip_verbatim_prefix,
+        write_host_stdin, AutoRestartEpoch, HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE,
+        HOST_SHUTDOWN_GRACE, MAX_HOST_STDOUT_LINE_BYTES, PIDECK_BUNDLED_BASH, PIDECK_BUNDLED_GIT,
     };
     #[cfg(unix)]
     use crate::pi_host::{is_executable_file, unix_child_exited_without_reaping};
@@ -266,6 +266,15 @@ rl.on('line', (line) => {
             .expect("bundled bash");
         assert_eq!(bash_value, bash.to_string_lossy());
         assert!(bash_value.contains("PiDeck 中文"));
+    }
+
+    #[test]
+    fn host_child_removed_env_drops_pi_cli_identity() {
+        let keys = host_child_removed_env();
+        assert!(keys.contains(&"PI_CODING_AGENT_SESSION_DIR"));
+        assert!(keys.contains(&"PI_CODING_AGENT"));
+        assert!(keys.contains(&"PI_PACKAGE_DIR"));
+        assert!(!keys.contains(&"PI_CODING_AGENT_DIR"));
     }
 
     #[test]

@@ -50,7 +50,7 @@ packaging pipeline; exact pinned versions and archive hashes live in
 
 Pi Host ships this family at the exact versions pinned in
 `packages/pi-host/package.json` and verified by
-`scripts/release-sdk-evidence.mjs` (`PI_SDK_PACKAGES`). Current pin: **0.84.2**.
+`scripts/release-sdk-evidence.mjs` (`PI_SDK_PACKAGES`). Current pin: **0.84.4**.
 
 | Package                           | Role                                                                      |
 | --------------------------------- | ------------------------------------------------------------------------- |

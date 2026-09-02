@@ -126,7 +126,7 @@ function writeFamilyExceptTelemetry(hostRoot, version) {
 test("resolves pi-telemetry through a reachable pi-ai node_modules link", () => {
   const hostRoot = mkdtempSync(join(tmpdir(), "pideck-sdk-tree-reachable-"));
   try {
-    const version = "0.84.2";
+    const version = "0.84.4";
     writeFamilyExceptTelemetry(hostRoot, version);
     writeManifest(
       join(
@@ -154,14 +154,14 @@ test("resolves pi-telemetry through a reachable pi-ai node_modules link", () => 
 test("rejects a pnpm store entry that is not reachable from Host dependencies", () => {
   const hostRoot = mkdtempSync(join(tmpdir(), "pideck-sdk-tree-orphan-"));
   try {
-    const version = "0.84.2";
+    const version = "0.84.4";
     writeFamilyExceptTelemetry(hostRoot, version);
     writeManifest(
       join(
         hostRoot,
         "node_modules",
         ".pnpm",
-        "@earendil-works+pi-telemetry@0.84.2",
+        "@earendil-works+pi-telemetry@0.84.4",
         "node_modules",
         ...TELEMETRY_PACKAGE.split("/"),
       ),

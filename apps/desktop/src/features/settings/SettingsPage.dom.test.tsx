@@ -15,7 +15,7 @@ const CONNECTED_HOST = {
   sessionId: null,
   sessionRevision: 0,
   packageRevision: 0,
-  sdkVersion: "0.84.2",
+  sdkVersion: "0.84.4",
   nodeVersion: "v24.18.0",
   agentDir: "/agent",
   phase: "waitingForWorkspace" as const,

@@ -10,7 +10,7 @@
 ## 1. 项目概览
 
 PaperMatrix / Matrix Agent 是基于 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
-的 Tauri 2 桌面学术助手，版本 0.2.2，MIT 许可。三个模块分层明确：
+的 Tauri 2 桌面学术助手，版本 0.2.3，MIT 许可。三个模块分层明确：
 
 | 模块 | 技术栈 | 职责 |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
    更新签名私钥 `apps/desktop/src-tauri/.tauri-updater.key`、`.env`、`*.pfx`
    绝不提交。测试使用
    `packages/pi-host/src/test-helpers/temp-agent.ts`。
-4. **SDK 补丁**：`@earendil-works/pi-coding-agent@0.84.2` 带 dist 补丁
+4. **SDK 补丁**：`@earendil-works/pi-coding-agent@0.84.4` 带 dist 补丁
    （`patches/`），升级必须重评补丁并更新 `docs/operations/`。
 5. **文档同改**：落地行为变更必须同一个提交内更新 `docs/`（文档为英文）。
 6. **i18n 双语同步**：`apps/desktop/src/lib/i18n/en.ts` 与 `zh.ts` 必须同步。
@@ -122,6 +122,13 @@ pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
 3. 创建或更新 **Draft** GitHub Release，标题 `PaperMatrix <tag>`。
    不会自动 Publish。
 
+`publish-to-server` job（Ubuntu，`needs: create-release`）：
+
+1. `gh release download` 草稿资产。
+2. `scripts/publish.py` 装配 `latest.json` + `v{version}/`。
+3. `rsync` 到 `DEPLOY_DIST_DIR`（只增不删）。
+4. `curl` 自检 `https://papermatrix.online/api/updates/matrix-agent/latest.json`。
+
 ### Repository secrets
 
 Settings → Secrets and variables → Actions → **Repository secrets**：
@@ -134,12 +141,17 @@ Settings → Secrets and variables → Actions → **Repository secrets**：
 | `APPLE_CERTIFICATE_PASSWORD` | 同上 | |
 | `APPLE_SIGNING_IDENTITY` | 同上 | |
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` / `KEYCHAIN_PASSWORD` | 同上 | 七件套要么全有要么全没有 |
+| `DEPLOY_SSH_KEY` | 回流服务器必须 | 专用部署私钥全文（含 BEGIN/END） |
+| `DEPLOY_SERVER_HOST` | 同上 | 公网可达的 SSH 主机 |
+| `DEPLOY_SERVER_USER` | 同上 | 例如 `theonx` |
+| `DEPLOY_DIST_DIR` | 同上 | 例如 `/home/theonx/servers-PaperDownload-prod/matrix-agent_dist` |
 
 公钥在 `apps/desktop/src-tauri/tauri.conf.json` 的
 `plugins.updater.pubkey`。客户端启动时向
 `https://papermatrix.online/api/updates/matrix-agent/latest.json` 查更新
-（Windows 静默安装；macOS 在没有 Developer ID 前不启用 updater）。服务器
-`publish.py` 负责覆盖 latest.json 和安装包，不在本仓库。
+（Windows 静默安装；macOS 在没有 Developer ID 前不启用 updater）。
+`scripts/publish.py` 把 Draft Release 产物装配进该分发目录；URL 为
+`https://papermatrix.online/api/updates/matrix-agent/files/v{version}/...`。
 
 ### 发一版的步骤
 
@@ -155,7 +167,10 @@ git push origin v0.2.3
 ```
 
 然后打开 https://github.com/Theonx5/MatrixAgent/actions 看
-`Release desktop installers`。成功后到 Releases 里检查 Draft，人工 Publish。
+`Release desktop installers`。四个 job 都绿后，
+`curl -fsS https://papermatrix.online/api/updates/matrix-agent/latest.json`
+应出现本版本与 `windows-x86_64` / `darwin-aarch64`。Draft GitHub Release
+仍可人工核对，不必 Publish 草稿。
 
 已对外发布的 tag **不要** `git tag -f` / force-push。迭代未发布的 draft 才可以。
 

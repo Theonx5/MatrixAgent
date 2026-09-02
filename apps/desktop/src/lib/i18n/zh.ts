@@ -268,7 +268,7 @@ export const zh: Record<MessageKey, string> = {
   providersEmptyTitle: "还没有配置任何模型服务。",
   providersSelectHint: "选择或添加一个模型服务",
   providersLoginSection: "内置账号登录",
-  providersLoginPageSubtitle: "通过 OAuth 或 API Key 登录内置模型服务，凭据与 pi CLI 共用。",
+  providersLoginPageSubtitle: "通过 OAuth 或 API Key 登录内置模型服务，凭据保存在 ~/.MatrixAgent。",
   providersAddChoiceOauth: "订阅登录（OAuth）",
   providersAddChoiceOauthHint: "Anthropic、OpenAI、Copilot 等内置账号",
   providersAddChoiceCustom: "自定义模型服务",

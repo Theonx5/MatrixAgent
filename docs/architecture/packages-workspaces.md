@@ -6,8 +6,10 @@ Before the native Desktop starts Pi Host, it guarantees one usable Workspace
 for a genuinely empty first-run configuration. It creates
 `<agentDir>/library`, records it in `lastWorkspace` and
 `knownWorkspaces`, and passes it through the normal Host preload path. Existing
-Workspace configuration always wins, and standalone Host processes retain the
-`waitingForWorkspace` state until given an explicit cwd.
+Workspace configuration always wins unless it still points at the Pi CLI
+`~/.pi/agent` directory: that leftover set is forgotten so the Matrix library
+becomes the first-run Workspace instead of a CLI project. Standalone Host
+processes retain the `waitingForWorkspace` state until given an explicit cwd.
 
 1. Desktop supplies a startup cwd, or the user picks one through `workspace.setCurrent`.
    On first launch the Host preloads that cwd and, when Restore last session is

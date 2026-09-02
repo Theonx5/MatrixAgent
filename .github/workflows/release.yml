@@ -202,3 +202,45 @@ jobs:
               --generate-notes \
               "${assets[@]}"
           fi
+
+  publish-to-server:
+    name: Publish updater feed to papermatrix.online
+    needs: create-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      # 国内直连 GitHub Release 不稳且草稿 Release 资产免登录不可下载，
+      # 客户端 updater 端点在 papermatrix.online，故把产物回流到自建服务器。
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - name: Download release assets
+        run: |
+          mkdir -p artifacts
+          gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -D artifacts
+      - name: Assemble dist (latest.json + version dir)
+        run: |
+          python3 scripts/publish.py \
+            --artifacts artifacts \
+            --version "${RELEASE_TAG#v}" \
+            --base-url "https://papermatrix.online" \
+            --target dist \
+            --notes "PaperMatrix ${RELEASE_TAG}"
+      - name: Upload to server
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_SERVER_HOST }}" >> ~/.ssh/known_hosts
+          # 只增不删：旧版本目录保留，支持回滚
+          rsync -avz dist/ "${{ secrets.DEPLOY_SERVER_USER }}@${{ secrets.DEPLOY_SERVER_HOST }}:${{ secrets.DEPLOY_DIST_DIR }}/"
+      - name: Self check
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          curl -fsS "https://papermatrix.online/api/updates/matrix-agent/latest.json" | grep -q "\"version\": \"$VERSION\""
+          echo "publish OK: $VERSION"

@@ -70,10 +70,12 @@ release scripts derive and validate the installed SDK family from that manifest.
 
 ## SDK patch (pnpm patch)
 
-`patches/@earendil-works__pi-coding-agent@0.84.2.patch` keeps invocation
+`patches/@earendil-works__pi-coding-agent@0.84.4.patch` keeps invocation
 ownership on AgentSession / ExtensionRunner / wrapRegisteredTool, plus the
-Windows `shell.js` bundled-bash and absolute `taskkill` fallbacks. Package
-manager env, cancel, and scoped update live in the Host adapter
+Windows `shell.js` bundled-bash fallback. Upstream 0.84.4 already uses an
+absolute `taskkill`; the patch still consumes spawn errors and falls back to
+`process.kill`. Package manager env, cancel, and scoped update live in the
+Host adapter
 (`installPackageManagerAdapter`), not in this dist patch.
 
 Both asynchronous command paths capture diagnostics and settle through the
@@ -131,6 +133,11 @@ capability. The scoping is safe because every reload call site runs under
 ## PiDeck-owned agent data
 
 The default agent directory is `~/.MatrixAgent`, isolated from the Pi CLI.
+Desktop never shows a toast for leftover `~/.pi/agent` settings; it rewrites
+them silently and does not inherit that CLI's last project as the default
+Workspace. Host spawn clears `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT`,
+and `PI_PACKAGE_DIR` so a machine-wide Pi CLI install cannot redirect the
+bundled SDK.
 Host-owned extra data lives in that directory:
 
 ```text

@@ -324,6 +324,7 @@ describe("Provider controller", () => {
     expect(active.state.model).toMatchObject({ provider: "renamed", id: "primary" });
     expect(active.setModel).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "renamed", id: "primary" }),
+      { persist: true },
     );
   });
 
@@ -1420,7 +1421,7 @@ describe("Provider controller", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toEqual({
       url: "/v1/messages",
-      userAgent: expect.stringMatching(/^Anthropic\/JS /),
+      userAgent: expect.stringMatching(/^pi \(/),
     });
     if (!("error" in outcome)) {
       expect(outcome.result).toEqual(

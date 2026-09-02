@@ -528,7 +528,7 @@ async function reconcileIdleActiveSessionModel(
     rebindCurrentSessionModel(session, registry);
     return;
   }
-  await session.setModel(model);
+  await session.setModel(model, { persist: true });
 }
 
 const ANTHROPIC_COMPAT_PATH_SUFFIXES = [
