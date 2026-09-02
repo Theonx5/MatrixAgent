@@ -117,7 +117,7 @@ requirements below.
 
 ## Signing
 
-Two signatures are involved:
+Three signing layers are involved:
 
 1. **Tauri updater (minisign).** `pnpm package:release` loads
    `TAURI_SIGNING_PRIVATE_KEY` or `apps/desktop/src-tauri/.tauri-updater.key`
@@ -127,18 +127,27 @@ Two signatures are involved:
    Losing the private key breaks update verification for installed apps.
    Windows installs with NSIS quiet mode. macOS in-place replace is disabled
    until the build is Developer ID signed.
-2. **Windows Authenticode.** This is what removes "Unknown publisher" and
-   SmartScreen. It is **not** configured yet unless GitHub has a purchased
-   certificate. Without it, CI signs with a throwaway `CN=PaperMatrix`
-   self-signed cert: `signtool` succeeds, Windows still shows 未知发布者 / 仍要运行.
-   Buy an OV or EV **code signing** certificate (or Azure Trusted Signing),
-   export the PFX, and add these repository secrets:
-   - `WINDOWS_CERTIFICATE` — base64 of the `.pfx`
-   - `WINDOWS_CERTIFICATE_PASSWORD` — PFX password
-   Optional: `PIDECK_WINDOWS_CERT_THUMBPRINT` if the cert is already in the
-   build machine store. EV or Azure Trusted Signing clears SmartScreen quickly;
-   OV still warns until the publisher builds reputation. Then re-run
-   **Release desktop installers** on the tag.
+2. **Windows Authenticode (SignPath OSS).** This is what removes "Unknown
+   publisher" and SmartScreen. Apply at
+   [SignPath Open Source](https://about.signpath.io/product/open-source) with
+   the public MIT repo `Theonx5/MatrixAgent`. After they approve the project,
+   create signing policy `release-signing` and add GitHub secrets:
+   - `SIGNPATH_API_TOKEN`
+   - `SIGNPATH_ORGANIZATION_ID`
+   Optional: `SIGNPATH_PROJECT_SLUG` (default `matrix-agent`) and
+   `SIGNPATH_SIGNING_POLICY_SLUG` (default `release-signing`). The release
+   workflow submits the unsigned NSIS installer, waits for SignPath, then
+   re-creates the Tauri updater `.sig` so hashes still match. Until those
+   secrets exist, CI falls back to a throwaway self-signed `CN=PaperMatrix`
+   cert and Windows still shows 未知发布者 / 仍要运行.
+3. **macOS Developer ID.** SignPath does **not** sign Mac apps. Gatekeeper
+   only accepts an Apple **Developer ID Application** certificate plus
+   notarization. That requires the paid [Apple Developer Program](https://developer.apple.com/programs/) ($99 / year).
+   After enrollment, add the existing all-or-nothing secrets:
+   `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+   `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and `KEYCHAIN_PASSWORD`.
+   There is no free Apple equivalent. Unsigned / ad-hoc DMGs need right-click
+   Open in Privacy & Security.
 
 ```powershell
 pnpm sign:windows

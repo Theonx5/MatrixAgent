@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -129,6 +130,26 @@ jobs:
           git status --porcelain || true
           git restore --worktree --source=HEAD -- .
           git status --porcelain || true
+      - name: Detect SignPath
+        if: runner.os == 'Windows'
+        id: signpath
+        shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$SIGNPATH_API_TOKEN" && -n "$SIGNPATH_ORGANIZATION_ID" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "project_slug=${SIGNPATH_PROJECT_SLUG:-matrix-agent}" >> "$GITHUB_OUTPUT"
+            echo "policy_slug=${SIGNPATH_SIGNING_POLICY_SLUG:-release-signing}" >> "$GITHUB_OUTPUT"
+            echo "PIDECK_SKIP_WINDOWS_AUTHENTICODE=1" >> "$GITHUB_ENV"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SignPath secrets are not set; Windows installer will stay self-signed."
+          fi
       - name: Package from the verified source commit
         env:
           PIDECK_VERIFIED_SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
@@ -136,6 +157,38 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           PIDECK_WINDOWS_CERT_THUMBPRINT: ${{ secrets.PIDECK_WINDOWS_CERT_THUMBPRINT }}
         run: pnpm package:release
+      - name: Stage unsigned Windows installer
+        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer="$(node --input-type=module -e "import { readFileSync } from 'node:fs'; const m = JSON.parse(readFileSync('apps/desktop/src-tauri/target/release-staging/PACKAGE_RELEASE.json', 'utf8')); process.stdout.write(m.sourceInstaller)")"
+          mkdir -p unsigned-windows
+          cp "$installer" unsigned-windows/
+      - name: Upload unsigned Windows installer
+        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
+        id: unsigned-windows
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows-installer
+          path: unsigned-windows
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign Windows installer with SignPath
+        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ steps.signpath.outputs.project_slug }}
+          signing-policy-slug: ${{ steps.signpath.outputs.policy_slug }}
+          github-artifact-name: unsigned-windows-installer
+          wait-for-completion: true
+          output-artifact-directory: signed-windows
+      - name: Bind SignPath signature into the updater feed
+        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
+        shell: bash
+        run: node scripts/apply-windows-signpath.mjs --signed-dir signed-windows
       - name: Confirm package manifest source commit
         shell: bash
         run: |

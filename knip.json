@@ -9,6 +9,7 @@
       "entry": [
         "scripts/compact-pi-host-resources.mjs",
         "scripts/package-release-macos.mjs",
+        "scripts/apply-windows-signpath.mjs",
         "scripts/update-node-pin.mjs",
         "scripts/**/*.test.mjs"
       ],

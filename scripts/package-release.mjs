@@ -337,7 +337,10 @@ const installer = timedStage("locate primary bundle output", () =>
   findPrimaryInstaller(bundleRoot),
 );
 let authenticode = null;
-if (installer && existsSync(installer)) {
+if (process.env.PIDECK_SKIP_WINDOWS_AUTHENTICODE === "1") {
+  authenticode = { skipped: true, reason: "signpath" };
+  console.log("[package:release] skipping local Authenticode; SignPath will sign the installer");
+} else if (installer && existsSync(installer)) {
   try {
     authenticode = timedStage("Authenticode-sign installer", () => {
       const cert = ensureWindowsCodeSigningCert();

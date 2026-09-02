@@ -202,7 +202,7 @@ try {
 for (const stalePath of [
   join(bundleRoot, "macos"),
   join(bundleRoot, "dmg"),
-  join(tauriRoot, "target/release/pideck"),
+  join(tauriRoot, "target/release/PaperMatrix"),
 ]) {
   rmSync(stalePath, { recursive: true, force: true });
 }
