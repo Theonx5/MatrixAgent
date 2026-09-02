@@ -6,7 +6,7 @@ development and release packaging are separate support levels:
 | Platform | Source development | Development package | Public release |
 |---|---|---|---|
 | Windows 11 x64 | Supported | NSIS candidate | Not yet signed or accepted |
-| Apple Silicon / Intel macOS | Supported for early testing | DMG candidate | Requires Developer ID + notarization |
+| Apple Silicon macOS | Supported for early testing | DMG candidate | Requires Developer ID + notarization |
 
 The tracked implementation requirements in
 [`p0-status.json`](./p0-status.json) are implemented, but `claimStatus` remains
@@ -81,9 +81,9 @@ appropriate only for a Draft Release or direct testing and can require manual
 approval in macOS Privacy & Security. A public macOS release requires a
 Developer ID Application certificate plus notarization credentials.
 
-The tag-triggered release workflow builds Windows x64, macOS arm64, and macOS
-x64 independently. It aggregates their accepted assets into one `latest.json`
-and one GitHub Draft Release. The Apple credential set is all-or-nothing:
+The tag-triggered release workflow builds Windows x64 and macOS arm64
+(Apple Silicon). It aggregates their accepted assets into one `latest.json`
+and one GitHub Draft Release. Intel macOS is not built. The Apple credential set is all-or-nothing:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and `KEYCHAIN_PASSWORD`.
 

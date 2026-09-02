@@ -17,7 +17,7 @@ env:
 
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-release:
@@ -32,9 +32,6 @@ jobs:
           - id: macos-arm64
             label: macOS Apple Silicon
             runner: macos-15
-          - id: macos-x64
-            label: macOS Intel
-            runner: macos-13
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
