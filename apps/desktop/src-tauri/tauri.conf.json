@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://papermatrix.online; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'",
       "devCsp": null
     }
   },
@@ -57,9 +57,9 @@
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxQzAxQ0E5QjY2MDVCMjYKUldRbVcyQzJxUnpBWWROajhTNVlYMStZNzNaWXNoZDBIb2JZa1NEYjBUK1pHdDlHOGY4clJlbnoK",
-      "endpoints": ["https://github.com/Theonx5/MatrixAgent/releases/latest/download/latest.json"],
+      "endpoints": ["https://papermatrix.online/api/updates/matrix-agent/latest.json"],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }

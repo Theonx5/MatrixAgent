@@ -114,8 +114,11 @@ Two signatures are involved:
 1. **Tauri updater (minisign).** `pnpm package:release` loads
    `TAURI_SIGNING_PRIVATE_KEY` or `apps/desktop/src-tauri/.tauri-updater.key`
    (gitignored). The matching public key is `plugins.updater.pubkey` in
-   `apps/desktop/src-tauri/tauri.conf.json`. Losing the private key breaks
-   update verification for installed apps.
+   `apps/desktop/src-tauri/tauri.conf.json`. Installed apps poll
+   `https://papermatrix.online/api/updates/matrix-agent/latest.json`.
+   Losing the private key breaks update verification for installed apps.
+   Windows installs with NSIS quiet mode. macOS in-place replace is disabled
+   until the build is Developer ID signed.
 2. **Windows Authenticode.** `pnpm package:release` and `pnpm sign:windows`
    sign `pideck.exe` and the NSIS installer. Set
    `PIDECK_WINDOWS_CERT_THUMBPRINT` to a purchased OV/EV certificate for a

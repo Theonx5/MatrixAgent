@@ -24,6 +24,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 vi.mock("../../lib/updater", () => ({
   checkForAppUpdate: () => checkForAppUpdateMock(),
+  updaterSupported: () => true,
 }));
 
 function host(): HostStatusSnapshot {

@@ -209,9 +209,14 @@ export const en = {
   hostUpdateProgress: "{percent}% downloaded",
   hostUpdateInstalling: "Installing update…",
   hostUpdateBackground: "You can leave Settings; the update will continue in the background.",
+  hostUpdateMacUnavailable: "macOS updates need a Developer ID signed build.",
   notifUpdateAvailable: "PaperMatrix {version} is available — install it from Settings → Host",
   notifUpdateCheckFailed: "Update check failed",
   notifUpdateInstallFailed: "Update install failed",
+  updateDialogTitle: "Version {version} is available",
+  updateDialogBody: "Download and install now? The app will restart when it finishes.",
+  updateDialogConfirm: "Update now",
+  updateDialogProgress: "Updating to {version}…",
   notifAgentDirChanged: "Agent directory changed — restart Matrix Host to apply",
   notifAgentDirOpenFailed: "Open agent directory failed",
   notifAgentDirChangeFailed: "Change agent directory failed",
@@ -798,7 +803,8 @@ export const en = {
   composerRemoveNamedFile: "Remove {name}",
   composerRemoveImage: "Remove image",
   composerUnavailable: "Chat unavailable",
-  composerPlaceholder: "Based on these papers, what do you want to research?  ( / commands · @ files )",
+  composerPlaceholder:
+    "Based on these papers, what do you want to research?  ( / commands · @ files )",
 
   // Paper Matrix
   matrixSubtitle: "Account, library sync, and the local literature folder",
@@ -818,7 +824,8 @@ export const en = {
   matrixLastSyncNever: "Not synced yet",
   matrixLastError: "Last error: {message}",
   matrixLibraryRoot: "Library folder",
-  matrixLibraryRootDesc: "Synced Markdown papers are written here. Packaged Windows installs default to a library folder next to the app.",
+  matrixLibraryRootDesc:
+    "Synced Markdown papers are written here. Packaged Windows installs default to a library folder next to the app.",
   matrixBrowse: "Browse",
   matrixPollInterval: "Sync interval (minutes)",
   matrixPollIntervalDesc: "Minimum 5 minutes. Default 30.",

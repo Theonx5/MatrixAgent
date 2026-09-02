@@ -8,9 +8,16 @@
 
 export type AppUpdate = {
   version: string;
+  notes: string | null;
   /** Downloads, installs and relaunches the app. Resolves only on failure paths. */
   install: (onProgress?: (progress: AppUpdateInstallProgress) => void) => Promise<void>;
 };
+
+/** macOS replacement requires Developer ID; skip until the app is notarized. */
+export function updaterSupported(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return !/Mac OS X|Macintosh/u.test(navigator.userAgent);
+}
 
 export type AppUpdateInstallProgress =
   | {
@@ -24,7 +31,7 @@ let inFlightCheck: Promise<AppUpdate | null> | null = null;
 
 async function runCheck(): Promise<AppUpdate | null> {
   const { isTauri } = await import("@tauri-apps/api/core");
-  if (!isTauri()) return null;
+  if (!isTauri() || !updaterSupported()) return null;
 
   const { check } = await import("@tauri-apps/plugin-updater");
   const update = await check();
@@ -32,6 +39,7 @@ async function runCheck(): Promise<AppUpdate | null> {
 
   return {
     version: update.version,
+    notes: typeof update.body === "string" && update.body.trim() ? update.body.trim() : null,
     install: async (onProgress) => {
       let downloadedBytes = 0;
       let totalBytes: number | null = null;

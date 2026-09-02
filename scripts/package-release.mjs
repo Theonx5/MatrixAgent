@@ -27,6 +27,7 @@ import {
   signWindowsPe,
   verifyWindowsPe,
 } from "./release-signing.mjs";
+import { releaseVersionFromEnv, tauriVersionCliArgs } from "./release-version.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.platform === "darwin") {
@@ -303,7 +304,14 @@ for (const stalePath of [
 }
 
 const tauriCli = join(root, "apps/desktop/node_modules/@tauri-apps/cli/tauri.js");
-const tauriArgs = existsSync(tauriCli) ? [tauriCli, "build", "--bundles", "nsis"] : null;
+const releaseVersion = releaseVersionFromEnv();
+const versionArgs = tauriVersionCliArgs(releaseVersion);
+if (releaseVersion) {
+  console.log(`[package:release] injecting app version ${releaseVersion} from tag`);
+}
+const tauriArgs = existsSync(tauriCli)
+  ? [tauriCli, "build", "--bundles", "nsis", ...versionArgs]
+  : null;
 
 const tauriStatus = timedStage("build Tauri NSIS candidate", () => {
   if (tauriArgs) {
@@ -318,7 +326,7 @@ const tauriStatus = timedStage("build Tauri NSIS candidate", () => {
   }
   const r = spawnSync(
     "pnpm",
-    ["--filter", "@pideck/desktop", "exec", "tauri", "build", "--bundles", "nsis"],
+    ["--filter", "@pideck/desktop", "exec", "tauri", "build", "--bundles", "nsis", ...versionArgs],
     { cwd: root, stdio: "inherit", shell: true, env: process.env },
   );
   return r.status ?? 1;
@@ -333,14 +341,16 @@ if (installer && existsSync(installer)) {
   try {
     authenticode = timedStage("Authenticode-sign installer", () => {
       const cert = ensureWindowsCodeSigningCert();
-      const signed = [installer, desktopExecutable].filter((path) => existsSync(path)).map((path) => {
-        const result = signWindowsPe(path, cert.thumbprint);
-        const verify = verifyWindowsPe(path);
-        if (!verify.ok) {
-          throw new Error(`Authenticode verify failed for ${path}: ${verify.output}`);
-        }
-        return { path, ...result, verify: verify.ok, thumbprint: cert.thumbprint };
-      });
+      const signed = [installer, desktopExecutable]
+        .filter((path) => existsSync(path))
+        .map((path) => {
+          const result = signWindowsPe(path, cert.thumbprint);
+          const verify = verifyWindowsPe(path);
+          if (!verify.ok) {
+            throw new Error(`Authenticode verify failed for ${path}: ${verify.output}`);
+          }
+          return { path, ...result, verify: verify.ok, thumbprint: cert.thumbprint };
+        });
       return { thumbprint: cert.thumbprint, files: signed };
     });
   } catch (error) {

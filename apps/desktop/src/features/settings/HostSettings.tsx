@@ -3,7 +3,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { getAppVersion } from "../../lib/app-version";
-import { checkForAppUpdate, type AppUpdate } from "../../lib/updater";
+import { checkForAppUpdate, updaterSupported, type AppUpdate } from "../../lib/updater";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
@@ -223,9 +223,11 @@ export function HostSettings() {
                 <span className="font-mono">{appVersion ?? "—"}</span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {updatePhase.state === "available" ||
-                updatePhase.state === "downloading" ||
-                updatePhase.state === "installing" ? (
+                {!updaterSupported() ? (
+                  <span className="text-xs text-muted">{t("hostUpdateMacUnavailable")}</span>
+                ) : updatePhase.state === "available" ||
+                  updatePhase.state === "downloading" ||
+                  updatePhase.state === "installing" ? (
                   <button
                     type="button"
                     className={secondaryButton}

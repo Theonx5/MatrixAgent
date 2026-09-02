@@ -93,8 +93,9 @@ pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
 
 ### 何时触发
 
-- 推送 tag：`v*`（例如 `v0.2.2`）
+- 推送 tag：`v*` 或 `agent-v*`（例如 `v1.2.0`、`agent-v1.2.0`）
 - 或 Actions 页手动 `workflow_dispatch`，输入已有 tag
+- 打包时从 tag 抽出 semver，经 `tauri build --config` 注入应用版本，不改工作区文件
 
 同一 tag 的新 run 会取消旧 run（`cancel-in-progress: true`）。
 
@@ -135,8 +136,10 @@ Settings → Secrets and variables → Actions → **Repository secrets**：
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` / `KEYCHAIN_PASSWORD` | 同上 | 七件套要么全有要么全没有 |
 
 公钥在 `apps/desktop/src-tauri/tauri.conf.json` 的
-`plugins.updater.pubkey`。更新源是
-`https://github.com/Theonx5/MatrixAgent/releases/latest/download/latest.json`。
+`plugins.updater.pubkey`。客户端启动时向
+`https://papermatrix.online/api/updates/matrix-agent/latest.json` 查更新
+（Windows 静默安装；macOS 在没有 Developer ID 前不启用 updater）。服务器
+`publish.py` 负责覆盖 latest.json 和安装包，不在本仓库。
 
 ### 发一版的步骤
 

@@ -27,9 +27,10 @@ import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-co
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
 import { getAppVersion } from "../lib/app-version";
+import { AppUpdatePrompt } from "../features/update/AppUpdatePrompt";
 import { checkForAppUpdate } from "../lib/updater";
 import { applyLanguage } from "../lib/i18n";
-import { tCurrent, useT } from "../lib/i18n/use-t";
+import { useT } from "../lib/i18n/use-t";
 import { shouldRestoreLastSession } from "./session-restore";
 import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./StartupScreen";
 import { DraftPersistenceController } from "./DraftPersistenceController";
@@ -1008,7 +1009,6 @@ export function App() {
           ) {
             store.setAppUpdatePhase({ state: "available", update });
           }
-          store.pushNotification(tCurrent("notifUpdateAvailable", { version: update.version }));
         }
       })
       .catch(() => undefined);
@@ -1072,6 +1072,7 @@ export function App() {
       )}
       <ExtensionUiModal />
       <GlobalSearchHost />
+      <AppUpdatePrompt />
       <CommandLayer />
       {startupVisible && (
         <StartupScreen stage={startupStage} exiting={startupPhase === "exiting"} />

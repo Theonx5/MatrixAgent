@@ -2,7 +2,7 @@ name: Release desktop installers
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "agent-v*"]
   workflow_dispatch:
     inputs:
       tag:

@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { writeReleaseResourceManifest } from "./release-resource-manifest.mjs";
 import { updaterPlatformKey } from "./release-runtime-target.mjs";
 import { currentSourceCommit, verifiedSourceBuildCommit } from "./verified-source-build.mjs";
+import { releaseVersionFromEnv, tauriVersionCliArgs } from "./release-version.mjs";
 
 if (process.platform !== "darwin" || !["arm64", "x64"].includes(process.arch)) {
   throw new Error(
@@ -214,8 +215,13 @@ const tauriEnv = {
   APPLE_SIGNING_IDENTITY: signingIdentity,
   TAURI_BUNDLER_DMG_IGNORE_CI: "true",
 };
+const releaseVersion = releaseVersionFromEnv();
+const versionArgs = tauriVersionCliArgs(releaseVersion);
+if (releaseVersion) {
+  console.log(`[package:release:macos] injecting app version ${releaseVersion} from tag`);
+}
 timed("build signed Tauri app and DMG", () =>
-  run(process.execPath, [tauriCli, "build", "--bundles", "app,dmg"], {
+  run(process.execPath, [tauriCli, "build", "--bundles", "app,dmg", ...versionArgs], {
     cwd: join(root, "apps/desktop"),
     env: tauriEnv,
   }),
