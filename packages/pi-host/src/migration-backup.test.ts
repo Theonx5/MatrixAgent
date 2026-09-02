@@ -8,6 +8,7 @@ import {
   MIGRATION_ID,
   type MigrationManifest,
 } from "./migration-backup.js";
+import { migrationBackupRoot } from "./pideck-data.js";
 
 const roots: string[] = [];
 let counter = 0;
@@ -47,7 +48,7 @@ function createAgentDir(options: { sessions?: number } = {}): string {
 }
 
 function backupDir(agentDir: string): string {
-  return join(agentDir, "pideck", "migration-backups", MIGRATION_ID);
+  return migrationBackupRoot(agentDir, MIGRATION_ID);
 }
 
 function readManifest(directory: string): MigrationManifest {

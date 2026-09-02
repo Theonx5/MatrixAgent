@@ -62,7 +62,7 @@ describe("session-search", () => {
     resetSessionSearchCaches();
     layout = createTempAgentLayout("pideck-search-");
     activeRoot = join(layout.agentDir, "sessions");
-    archiveRoot = join(layout.agentDir, "pideck", "session-archive");
+    archiveRoot = join(layout.agentDir, "session-archive");
   });
 
   afterEach(() => {
