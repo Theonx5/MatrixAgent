@@ -58,7 +58,7 @@ function linkDirectory(target, path) {
 }
 
 function writeResourceMetadata(resourceDir, archiveBytes, links, graph) {
-  const zipPath = join(resourceDir, "node_modules.zip");
+  const zipPath = join(resourceDir, "node_modules.tar.gz");
   const linksPath = join(resourceDir, "NODE_MODULES_LINKS.json");
   const graphPath = join(resourceDir, "NODE_MODULES_GRAPH.json");
   writeFileSync(zipPath, archiveBytes);

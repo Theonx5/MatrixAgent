@@ -162,12 +162,12 @@ function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
   const mainPath = join(hostDir, "main.js");
   const hostMainPath = join(hostDir, "host-main.js");
   const hostPackagePath = join(hostDir, "package.json");
-  const zipPath = join(hostDir, "node_modules.zip");
+  const zipPath = join(hostDir, "node_modules.tar.gz");
   for (const [path, label] of [
     [mainPath, "pi-host/main.js"],
     [hostMainPath, "pi-host/host-main.js"],
     [hostPackagePath, "pi-host/package.json"],
-    [zipPath, "pi-host/node_modules.zip"],
+    [zipPath, "pi-host/node_modules.tar.gz"],
     [join(resourceDir, "node", "node.exe"), "node/node.exe"],
     [join(resourceDir, "node", "npm.cmd"), "node/npm.cmd"],
     [join(resourceDir, "git", "cmd", "git.exe"), "git/cmd/git.exe"],
@@ -216,7 +216,7 @@ function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
     }
   }
   if (existsSync(zipPath) && statSync(zipPath).size < 1_000_000) {
-    errors.push("packaged pi-host/node_modules.zip is unexpectedly small");
+    errors.push("packaged pi-host/node_modules.tar.gz is unexpectedly small");
   }
   if (existsSync(join(hostDir, "node_modules"))) {
     errors.push("packaged pi-host unexpectedly contains expanded node_modules");

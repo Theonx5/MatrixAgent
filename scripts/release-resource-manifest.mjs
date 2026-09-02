@@ -37,7 +37,7 @@ function criticalReleaseResourcePaths(runtimeTarget) {
     "pi-host/host-main.js",
     "pi-host/package.json",
     "pi-host/STAGING.json",
-    "pi-host/node_modules.zip",
+    "pi-host/node_modules.tar.gz",
     "pi-host/NODE_MODULES_LINKS.json",
     "pi-host/NODE_MODULES_GRAPH.json",
     "pi-host/portable-node-modules.mjs",

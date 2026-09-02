@@ -68,7 +68,7 @@ need(join(res, "pi-host/package.json"), "pi-host/package.json missing");
 need(join(res, "pi-host/STAGING.json"), "pi-host/STAGING.json missing");
 
 const expandedSdk = join(res, "pi-host/node_modules/@earendil-works/pi-coding-agent/package.json");
-const zipPath = join(res, "pi-host/node_modules.zip");
+const zipPath = join(res, "pi-host/node_modules.tar.gz");
 const hostMain = join(res, "pi-host/host-main.js");
 const nodeModulesLinks = join(res, "pi-host/NODE_MODULES_LINKS.json");
 const nodeModulesGraph = join(res, "pi-host/NODE_MODULES_GRAPH.json");

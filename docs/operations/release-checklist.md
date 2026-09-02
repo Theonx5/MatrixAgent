@@ -21,7 +21,7 @@ pnpm validate:resources
 ```
 
 - [ ] `resources/pi-host/STAGING.json` records `stageTimingsMs` and a hoisted
-  staging strategy; the compacted release contains `node_modules.zip` but no
+  staging strategy; the compacted release contains `node_modules.tar.gz` but no
   expanded `node_modules` or redundant `.pnpm` tree
 - [ ] `STAGING.json.sdkEvidence` and `RELEASE_RESOURCES.json.sdkEvidence` match
   `packages/pi-host/package.json`, `pnpm-lock.yaml`, all four staged Pi packages,

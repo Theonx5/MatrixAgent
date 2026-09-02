@@ -182,26 +182,13 @@ function windowsBsdTar() {
   return systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
 }
 
-function extractPiHostArchive(zipPath, destination) {
+function extractPiHostArchive(archivePath, destination) {
   mkdirSync(destination, { recursive: true });
-  let result;
-  if (process.platform === "win32") {
-    result = spawnSync(windowsBsdTar(), ["-x", "-f", zipPath, "-C", destination], {
-      encoding: "utf8",
-      shell: false,
-    });
-  } else {
-    result = spawnSync("unzip", ["-q", "-o", zipPath, "-d", destination], {
-      encoding: "utf8",
-      shell: false,
-    });
-    if (result.status !== 0) {
-      result = spawnSync("tar", ["-x", "-f", zipPath, "-C", destination], {
-        encoding: "utf8",
-        shell: false,
-      });
-    }
-  }
+  const tar = process.platform === "win32" ? windowsBsdTar() : "tar";
+  const result = spawnSync(tar, ["-x", "-z", "-f", archivePath, "-C", destination], {
+    encoding: "utf8",
+    shell: false,
+  });
   if (result.status !== 0) {
     throw new Error(
       `Pi Host archive extraction failed: ${result.stderr || result.stdout || result.error?.message || `exit ${String(result.status)}`}`,
@@ -212,7 +199,7 @@ function extractPiHostArchive(zipPath, destination) {
 export async function ensurePiHostRuntime(options) {
   const resourceDir = resolve(options.resourceDir);
   const cacheRoot = resolve(options.cacheRoot);
-  const zipPath = join(resourceDir, "node_modules.zip");
+  const zipPath = join(resourceDir, "node_modules.tar.gz");
   const linksPath = join(resourceDir, "NODE_MODULES_LINKS.json");
   const graphPath = join(resourceDir, "NODE_MODULES_GRAPH.json");
   const staging = readJson(join(resourceDir, "STAGING.json"), "Pi Host STAGING metadata");
@@ -224,7 +211,7 @@ export async function ensurePiHostRuntime(options) {
     sha256File(graphPath),
   ]);
   for (const [actual, expected, label] of [
-    [actualHashes[0], marker.nodeModulesZipSha256, "node_modules.zip"],
+    [actualHashes[0], marker.nodeModulesZipSha256, "node_modules.tar.gz"],
     [actualHashes[1], marker.nodeModulesLinksSha256, "NODE_MODULES_LINKS.json"],
     [actualHashes[2], marker.nodeModulesGraphSha256, "NODE_MODULES_GRAPH.json"],
   ]) {

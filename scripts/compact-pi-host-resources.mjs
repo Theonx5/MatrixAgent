@@ -27,7 +27,9 @@ import {
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDir = join(root, "apps/desktop/src-tauri/resources/pi-host");
 const nm = join(hostDir, "node_modules");
-const zipPath = join(hostDir, "node_modules.zip");
+const archiveName = "node_modules.tar.gz";
+const archivePath = join(hostDir, archiveName);
+const legacyZipPath = join(hostDir, "node_modules.zip");
 const linksPath = join(hostDir, "NODE_MODULES_LINKS.json");
 const graphPath = join(hostDir, "NODE_MODULES_GRAPH.json");
 const portableHelperSource = join(root, "scripts/portable-node-modules.mjs");
@@ -35,7 +37,8 @@ const portableHelperPath = join(hostDir, "portable-node-modules.mjs");
 const bootstrapRuntimeSource = join(root, "scripts/pi-host-bootstrap-runtime.mjs");
 const bootstrapRuntimePath = join(hostDir, "pi-host-bootstrap-runtime.mjs");
 const hostRuntimePayload = join(hostDir, "host-runtime");
-const MIN_ZIP_BYTES = 1_000_000; // real SDK tree is tens of MB
+const MIN_ARCHIVE_BYTES = 1_000_000; // real SDK tree is tens of MB
+const HOST_PAYLOAD_FORMAT = "pax-gzip";
 
 function die(msg) {
   console.error("[compact]", msg);
@@ -57,38 +60,83 @@ function windowsBsdTar() {
   return systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
 }
 
-function createNodeModulesZip() {
-  if (process.platform === "win32") {
-    return spawnSync(
-      windowsBsdTar(),
-      ["-a", "-c", "-f", zipPath, "-C", hostDir, "node_modules", "host-runtime"],
-      { encoding: "utf8", shell: false },
-    );
-  }
+function tarBin() {
+  return process.platform === "win32" ? windowsBsdTar() : "tar";
+}
 
-  // BSD tar can infer zip from the extension. This keeps local macOS release
-  // verification equivalent to the Windows staging path without weakening the
-  // packaged Windows runtime checks.
-  const tar = spawnSync(
-    "tar",
-    ["-a", "-c", "-f", zipPath, "-C", hostDir, "node_modules", "host-runtime"],
+function createNodeModulesArchive() {
+  // Windows tar -a zip round-trips drop files (libarchive ZIP decompression -5),
+  // which then crashes the staged Host on undici's lib/util/date.js. pax+gzip
+  // extracts with the same tar.exe.
+  return spawnSync(
+    tarBin(),
+    [
+      "--format",
+      "pax",
+      "-c",
+      "-z",
+      "-f",
+      archivePath,
+      "-C",
+      hostDir,
+      "node_modules",
+      "host-runtime",
+    ],
     { encoding: "utf8", shell: false },
   );
-  if (tar.status === 0) return tar;
+}
 
-  // GNU tar cannot create zip archives, so use Info-ZIP when available. All
-  // pnpm links were detached into NODE_MODULES_LINKS.json before this point.
-  return spawnSync("zip", ["-q", "-r", zipPath, "node_modules", "host-runtime"], {
-    cwd: hostDir,
+function extractNodeModulesArchive(destination) {
+  mkdirSync(destination, { recursive: true });
+  return spawnSync(tarBin(), ["-x", "-z", "-f", archivePath, "-C", destination], {
     encoding: "utf8",
     shell: false,
   });
 }
 
+function verifyExtractedArchive(linksManifest) {
+  const verifyDir = join(hostDir, ".compact-verify");
+  rmSync(verifyDir, { recursive: true, force: true });
+  try {
+    const extracted = extractNodeModulesArchive(verifyDir);
+    if (extracted.status !== 0) {
+      throw new Error(
+        `archive extract verify failed: ${
+          extracted.stderr || extracted.stdout || extracted.error?.message || extracted.status
+        }`,
+      );
+    }
+    restoreNodeModulesLinks(join(verifyDir, "node_modules"), linksManifest);
+    const undiciDate = join(verifyDir, "node_modules", "undici", "lib", "util", "date.js");
+    if (!existsSync(undiciDate)) {
+      throw new Error("extracted undici is missing lib/util/date.js");
+    }
+    const prove = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        "import('undici').then(()=>console.log('UNDICI_OK')).catch((error)=>{console.error(error);process.exit(1)})",
+      ],
+      { cwd: verifyDir, encoding: "utf8", shell: false },
+    );
+    if (prove.status !== 0 || !(prove.stdout || "").includes("UNDICI_OK")) {
+      throw new Error(`extracted undici import failed: ${prove.stderr || prove.stdout || prove.status}`);
+    }
+  } finally {
+    rmSync(verifyDir, { recursive: true, force: true });
+  }
+}
+
 function copyHostRuntimeTree(source, destination, isRoot = false, copyAll = false) {
   mkdirSync(destination, { recursive: true });
   for (const name of readdirSync(source)) {
-    if (isRoot && ["main.js", "node_modules", "host-runtime", "vendor"].includes(name)) continue;
+    if (
+      isRoot &&
+      ["main.js", "node_modules", "host-runtime", "vendor", ".compact-verify", archiveName].includes(
+        name,
+      )
+    )
+      continue;
     const from = join(source, name);
     const to = join(destination, name);
     const stats = statSync(from);
@@ -118,7 +166,7 @@ if (!existsSync(hostMain)) {
   if (!existsSync(mainJs)) die("no main.js to rename");
   const currentMain = readFileSync(mainJs, "utf8");
   if (
-    (currentMain.includes("node_modules.zip") && currentMain.includes("host-main.js")) ||
+    (currentMain.includes("node_modules.tar.gz") && currentMain.includes("host-main.js")) ||
     currentMain.includes("pi-host-bootstrap-runtime.mjs") ||
     currentMain.includes("PIDECK_HOST_CACHE_DIR")
   ) {
@@ -132,13 +180,15 @@ copyFileSync(bootstrapRuntimeSource, bootstrapRuntimePath);
 // Zip if missing or too small
 const stagingPath = join(hostDir, "STAGING.json");
 const priorStaging = existsSync(stagingPath) ? JSON.parse(readFileSync(stagingPath, "utf8")) : {};
-const zipOk =
-  existsSync(zipPath) &&
-  statSync(zipPath).size >= MIN_ZIP_BYTES &&
-  priorStaging.hostRuntimePackagedInZip === true;
-if (!zipOk) {
-  if (!existsSync(nm)) die("node_modules missing and no valid zip");
-  if (existsSync(zipPath)) rmSync(zipPath, { force: true });
+if (existsSync(legacyZipPath)) rmSync(legacyZipPath, { force: true });
+const archiveOk =
+  existsSync(archivePath) &&
+  statSync(archivePath).size >= MIN_ARCHIVE_BYTES &&
+  priorStaging.hostRuntimePackagedInZip === true &&
+  priorStaging.hostPayloadFormat === HOST_PAYLOAD_FORMAT;
+if (!archiveOk) {
+  if (!existsSync(nm)) die("node_modules missing and no valid host payload archive");
+  if (existsSync(archivePath)) rmSync(archivePath, { force: true });
   let detached;
   try {
     rmSync(hostRuntimePayload, { recursive: true, force: true });
@@ -155,14 +205,21 @@ if (!zipOk) {
     detached = detachNodeModulesLinks(nm);
     writeFileSync(linksPath, `${JSON.stringify(detached.manifest, null, 2)}\n`);
     console.log(
-      "[compact] creating node_modules.zip from portable pnpm store; links:",
+      "[compact] creating node_modules.tar.gz from portable pnpm store; links:",
       detached.manifest.links.length,
     );
-    const tar = createNodeModulesZip();
-    if (tar.status !== 0 || !existsSync(zipPath) || statSync(zipPath).size < MIN_ZIP_BYTES) {
+    const tar = createNodeModulesArchive();
+    if (
+      tar.status !== 0 ||
+      !existsSync(archivePath) ||
+      statSync(archivePath).size < MIN_ARCHIVE_BYTES
+    ) {
       console.error(tar.stdout ?? "", tar.stderr ?? tar.error?.message ?? "");
-      throw new Error(`tar zip failed size=${existsSync(zipPath) ? statSync(zipPath).size : 0}`);
+      throw new Error(
+        `tar gzip failed size=${existsSync(archivePath) ? statSync(archivePath).size : 0}`,
+      );
     }
+    verifyExtractedArchive(detached.manifest);
   } catch (error) {
     if (detached) {
       try {
@@ -177,12 +234,12 @@ if (!zipOk) {
     rmSync(hostRuntimePayload, { recursive: true, force: true });
     die(error instanceof Error ? error.message : String(error));
   }
-  console.log("[compact] zip bytes", statSync(zipPath).size);
+  console.log("[compact] archive bytes", statSync(archivePath).size);
 } else {
   for (const required of [linksPath, graphPath, portableHelperPath, bootstrapRuntimePath]) {
     if (!existsSync(required)) die(`portable node_modules metadata missing: ${required}`);
   }
-  console.log("[compact] reusing existing zip bytes", statSync(zipPath).size);
+  console.log("[compact] reusing existing archive bytes", statSync(archivePath).size);
 }
 
 // Remove expanded tree so NSIS only packs one archive file
@@ -213,16 +270,17 @@ writeFileSync(mainJs, bootstrap);
 
 if (existsSync(stagingPath)) {
   const s = JSON.parse(readFileSync(stagingPath, "utf8"));
-  s.nodeModulesPackagedAs = "node_modules.zip";
+  s.nodeModulesPackagedAs = archiveName;
+  s.hostPayloadFormat = HOST_PAYLOAD_FORMAT;
   s.bootstrapEntry = "main.js -> versioned writable cache -> cached host-runtime/host-main.js";
   s.hostRuntimePackagedInZip = true;
   s.hostCacheSchemaVersion = 1;
-  s.zipBytes = statSync(zipPath).size;
-  s.nodeModulesZipSha256 = sha256File(zipPath);
+  s.zipBytes = statSync(archivePath).size;
+  s.nodeModulesZipSha256 = sha256File(archivePath);
   s.nodeModulesLinks = JSON.parse(readFileSync(linksPath, "utf8")).links.length;
   s.nodeModulesLinksSha256 = sha256File(linksPath);
   s.nodeModulesGraphSha256 = sha256File(graphPath);
   writeFileSync(stagingPath, JSON.stringify(s, null, 2));
 }
 
-console.log("[compact] OK — resources ready for NSIS (single zip, no deep node_modules paths)");
+console.log("[compact] OK — resources ready for NSIS (single tar.gz, no deep node_modules paths)");
