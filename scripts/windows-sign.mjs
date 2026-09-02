@@ -10,7 +10,7 @@ import {
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const defaultInstaller = join(
   root,
-  "apps/desktop/src-tauri/target/release/bundle/nsis/PaperMatrix_0.2.3_x64-setup.exe",
+  "apps/desktop/src-tauri/target/release/bundle/nsis/PaperMatrix_0.2.4_x64-setup.exe",
 );
 const defaultExe = join(root, "apps/desktop/src-tauri/target/release/PaperMatrix.exe");
 const targets = process.argv.slice(2);

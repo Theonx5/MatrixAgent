@@ -10,7 +10,7 @@
 ## 1. 项目概览
 
 PaperMatrix / Matrix Agent 是基于 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
-的 Tauri 2 桌面学术助手，版本 0.2.3，MIT 许可。三个模块分层明确：
+的 Tauri 2 桌面学术助手，版本 0.2.4，MIT 许可。三个模块分层明确：
 
 | 模块 | 技术栈 | 职责 |
 | --- | --- | --- |
@@ -164,8 +164,8 @@ pnpm format:changed
 pnpm verify:quick
 git push origin main
 # 等 P0 workflow 绿了再打 tag
-git tag -a v0.2.3 -m "PaperMatrix 0.2.3"
-git push origin v0.2.3
+git tag -a v0.2.4 -m "PaperMatrix 0.2.4"
+git push origin v0.2.4
 ```
 
 然后打开 https://github.com/Theonx5/MatrixAgent/actions 看
