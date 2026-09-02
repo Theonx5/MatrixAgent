@@ -55,7 +55,7 @@ describe("Sidebar", () => {
         removeItem: vi.fn(),
       });
 
-      const html = renderToStaticMarkup(createElement(SidebarLayout, { page, setPage: vi.fn() }));
+      const html = renderToStaticMarkup(createElement(SidebarLayout, { page }));
 
       expect(html).toContain("New conversation");
       expect(html).toContain("Workspaces");
@@ -82,7 +82,7 @@ describe("Sidebar", () => {
     });
 
     const html = renderToStaticMarkup(
-      createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
+      createElement(SidebarLayout, { page: "chat" }),
     );
 
     expect(html).toContain("height:180px");
@@ -96,7 +96,7 @@ describe("Sidebar", () => {
     });
 
     const html = renderToStaticMarkup(
-      createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
+      createElement(SidebarLayout, { page: "chat" }),
     );
 
     expect(html).toContain('aria-label="Expand sidebar"');

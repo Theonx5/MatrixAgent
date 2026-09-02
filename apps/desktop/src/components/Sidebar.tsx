@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, LoaderCircle, MessageCirclePlus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageCirclePlus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -77,17 +77,14 @@ function NewSessionButton() {
 
 export function Sidebar() {
   const page = useAppStore((s) => s.page);
-  const setPage = useAppStore((s) => s.setPage);
 
-  return <SidebarLayout page={page} setPage={setPage} />;
+  return <SidebarLayout page={page} />;
 }
 
 export function SidebarLayout({
   page,
-  setPage,
 }: {
   page: NavPage;
-  setPage: (page: NavPage) => void;
 }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
