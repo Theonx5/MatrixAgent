@@ -1,49 +1,50 @@
-# agent.md — PiDeck 工程约束（AI 代理必读）
+# AGENT.md — Matrix Agent 工程约束（AI 代理必读）
 
 本文件是 AI 编码代理在本仓库工作时的约束与须知。深度背景按顺序阅读
 `docs/README.md` 的 Suggested reading order，功能 → 源码映射见
-`docs/architecture/source-map.md`。
+`docs/architecture/source-map.md`。发布细节另见
+`docs/operations/release.md`。
+
+远端仓库：https://github.com/Theonx5/MatrixAgent
 
 ## 1. 项目概览
 
-PiDeck 是 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
-的 Tauri 2 原生桌面应用，版本 0.2.2，MIT 许可。三个模块分层明确：
+PaperMatrix / Matrix Agent 是基于 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
+的 Tauri 2 桌面学术助手，版本 0.2.2，MIT 许可。三个模块分层明确：
 
 | 模块 | 技术栈 | 职责 |
 | --- | --- | --- |
 | `packages/protocol` | TypeScript | Rust / Host / UI 三进程间的类型化协议（方法、事件、校验） |
-| `packages/pi-host` | Node sidecar | 业务逻辑层，持有 Pi SDK 与会话/包/Provider 控制器 |
+| `packages/pi-host` | Node sidecar | 业务逻辑层：Pi SDK、会话/包/Provider，以及 Paper Matrix 文献库同步 |
 | `apps/desktop` | React 19 + Vite + Tauri 2 (Rust) | 界面与桌面宿主 |
 
-## 2. 本机环境（2026-09-01 已配置并验证）
+默认用户数据在 `~/.MatrixAgent`。Windows 安装版默认文献库在安装目录下的
+`library/`。不要指向 `~/.pi/agent`。
 
-- Windows 11 x64；Node v22.23.2（满足 ≥22.19.0；`.node-version` 期望 24.18.0，仅提示）。
-- pnpm **必须 9.15.0**（corepack 已激活）。pnpm 11 会忽略 `patchedDependencies`
-  位置并装出错误的 Pi SDK 依赖树，禁止升级 pnpm。
-- Rust 1.98.0 `x86_64-pc-windows-msvc`（rustup minimal profile），位于
-  `C:\Users\Administrator\.cargo`。bash 中需
+## 2. 本机环境
+
+- Windows 11 x64；Node ≥22.19.0（`.node-version` 为 24.18.0）。
+- pnpm **必须 9.15.0**（corepack 已激活）。禁止升级 pnpm。
+- Rust `x86_64-pc-windows-msvc`。bash 中需
   `export PATH="/c/Users/Administrator/.cargo/bin:$PATH"`。
-- MSVC 14.44 + Windows SDK 10.0.26100（VS 2022 Community 自带），Tauri 可编译。
-- 本机网络不能直连 GitHub / static.rust-lang.org，已配置镜像：
-  - cargo crates.io → rsproxy.cn（`~/.cargo/config.toml`）
-  - git GitHub → `gh-proxy.com` insteadOf 重写（全局 git config，勿删）
-  - rustup → `RUSTUP_DIST_SERVER=https://rsproxy.cn`
-- 本仓库由源码压缩包解压而来，git 仓库为后建（基线 commit `7f83a7a`），
-  本地 `core.autocrlf=false`。
+- 本机 rustup 经常下不了 `rustfmt` / `clippy`。这两种检查以 GitHub Actions
+  的 Windows job 为准，改 Rust 后必须等 CI `lint:rust`。
+- 本机 DNS 访问 github.com 不稳定时，SSH 使用 `~/.ssh/config` 里的
+  `HostName` IPv4 + `HostKeyAlias github.com`。
 
 ## 3. 常用命令
 
 ```bash
-pnpm install --frozen-lockfile                  # 依赖安装（禁止手改 pnpm-lock.yaml）
-pnpm dev:fast                                   # 开发热载（vite + host 增量构建）
-pnpm --filter @pideck/desktop run tauri:dev     # Tauri 桌面开发模式
-pnpm build                                      # protocol + pi-host + desktop 产物构建
-pnpm verify:quick                               # 提交前必须全绿：docs/fixtures/元数据/lint/类型/测试
-pnpm verify:p0                                  # 大改或发布前：verify:quick + 构建 + Rust 测试
-pnpm format:changed                             # 只格式化变更文件（提交前执行）
-node scripts/prepare-rust-test-resources.mjs    # cargo 测试前准备资源目录（tauri:dev 已内置）
-cd apps/desktop/src-tauri && cargo test         # Rust 测试（需上一步先执行）
+pnpm install --frozen-lockfile
+pnpm dev:fast
+pnpm --filter @pideck/desktop run tauri:dev
+pnpm build
+pnpm format:changed          # 提交前格式化变更文件
+pnpm verify:quick            # docs / fixtures / 元数据 / lint / 类型 / 测试
+pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
 ```
+
+不要把 `pnpm package:release` 当正式发布。安装包只由 GitHub Actions 打。
 
 ## 4. 硬约束（违反即返工）
 
@@ -52,38 +53,116 @@ cd apps/desktop/src-tauri && cargo test         # Rust 测试（需上一步先�
    `validate.test.ts`。协议文档 `docs/architecture/protocol.md` 同步更新。
 2. **安全边界**：只从 `~/.MatrixAgent` 加载用户级 Package，不继承本机
    `~/.pi/agent`；打开工作区不得执行 `<workspace>/.pi/extensions`
-   （`SettingsManager` 固定 `projectTrusted: false`）。禁止引入加载项目级
-   Package 的代码路径。
+   （`SettingsManager` 固定 `projectTrusted: false`）。
 3. **用户数据不入库**：`~/.MatrixAgent` 下的凭据、设置、会话绝不提交；
-   `verify:fixtures` 会扫描泄漏。测试一律使用
-   `packages/pi-host/src/test-helpers/temp-agent.ts` 临时目录。
+   更新签名私钥 `apps/desktop/src-tauri/.tauri-updater.key`、`.env`、`*.pfx`
+   绝不提交。测试使用
+   `packages/pi-host/src/test-helpers/temp-agent.ts`。
 4. **SDK 补丁**：`@earendil-works/pi-coding-agent@0.84.2` 带 dist 补丁
-   （`patches/`），升级 SDK 版本必须重新评估补丁内容并同步
-   `docs/operations/` 下的升级记录。
-5. **文档同改**：落地行为变更必须同一个提交内更新 `docs/` 对应页面
-   （文档为英文，新增内容保持英文风格），`verify:docs` 校验链接与状态。
-6. **i18n 双语同步**：`apps/desktop/src/lib/i18n/en.ts` 与 `zh.ts` 必须同步，
-   `i18n.test.ts` 校验 zh 覆盖率；新界面文案两个目录都要加。
-7. **测试随行**：新功能/修复必须带 colocated vitest 测试（`*.test.ts` 与
-   被测文件同目录）；Rust 行为用 `#[cfg(test)]` 单测。不许删测试来让构建通过。
-8. **发布管线只读**：`scripts/release-*.mjs`、`release-runtime.lock.json`、
-   `.github/workflows/` 未经明确要求不得修改。
+   （`patches/`），升级必须重评补丁并更新 `docs/operations/`。
+5. **文档同改**：落地行为变更必须同一个提交内更新 `docs/`（文档为英文）。
+6. **i18n 双语同步**：`apps/desktop/src/lib/i18n/en.ts` 与 `zh.ts` 必须同步。
+7. **测试随行**：新功能/修复带 colocated vitest；不许删测试来让构建通过。
+8. **路径与 Host 数据**：Host 数据在 `agentDir` 根下
+   （`migration-backups/`、`session-archive/`、`library/`），不要再写
+   `agentDir/pideck/...`。
+9. **Windows 覆盖文件**：替换已有文件时按 `credential-store.ts` 的方式处理
+   `EPERM`（unlink 重试，必要时 `copyFile`），不要假设 `rename` 能覆盖。
 
-## 5. 已知坑
+## 5. 提交规范
 
-- `format:check` 依赖 git 工作区状态；空仓库（无 commit）会报
-  `git diff --no-index` usage 错误，先提交一次基线即可。
-- tauri `build.rs` 会校验 `resources/{pi-host,node,git}` 存在；裸 cargo
-  check/test 前先跑 `prepare-rust-test-resources.mjs`。
-- 多包 vitest 并行偶发时序抖动（如 pi-host 偶挂 1–2 个用例）：先单独复跑
-  `pnpm --filter @pideck/pi-host run test` 确认，再判断是否真回归。
-- Prettier：`printWidth 100`、`endOfLine auto`、`proseWrap preserve`；
-  ESLint + knip（未用导出检查）在 `pnpm lint` 中强制。
-- Windows bash 下 cargo/rustc 不在默认 PATH，见第 2 节 export 命令。
+- 门槛：`pnpm format:changed` + `pnpm verify:quick`。改了
+  `apps/desktop/src-tauri` 还要意识到本机可能跑不了 `pnpm lint:rust`，
+  推送后看 Windows CI。
+- 提交信息用简洁祈使句。
+- 主分支 `main`。推送到 `origin`（`git@github.com:Theonx5/MatrixAgent.git`）。
 
-## 6. 提交规范
+## 6. 发布工作流（只走 GitHub Actions）
 
-- 提交门槛：`pnpm format:changed` + `pnpm verify:quick` 全绿。
-- 提交信息用简洁祈使句，一句话说明行为变化；跨三端的协议变更在正文列出
-  受影响模块。
-- 仓库当前无远端、无历史约定，保持单分支线性提交即可。
+定义文件：`.github/workflows/release.yml`  
+工作流名：`Release desktop installers`  
+配套：`.github/workflows/p0.yml` 在每次 `main` push / PR 上跑源码门。
+
+### 打什么包
+
+| 平台 | Runner | 产物 |
+| --- | --- | --- |
+| Windows x64 | `windows-2022` | NSIS `PaperMatrix_*_x64-setup.exe` + updater `.sig` |
+| macOS Apple Silicon | `macos-15` | DMG + `.app.tar.gz` updater |
+| Intel macOS | **不构建** | — |
+
+### 何时触发
+
+- 推送 tag：`v*`（例如 `v0.2.2`）
+- 或 Actions 页手动 `workflow_dispatch`，输入已有 tag
+
+同一 tag 的新 run 会取消旧 run（`cancel-in-progress: true`）。
+
+### 流水线在做什么
+
+每个平台 job：
+
+1. checkout **该 tag 指向的 commit**（不是当时的 `main`  tip，除非 tag 已跟上）。
+2. pnpm 9.15.0 + `.node-version` 的 Node + stable Rust。
+3. macOS：若 Repository secrets 里 Apple 证书七件套齐全，则 Developer ID
+   签名；一件都没有则 ad-hoc。缺几件会直接失败。
+4. **Windows 源码门** `pnpm verify:p0`（含 ESLint、knip、Prettier、测试、
+   `cargo fmt --check`、`clippy -D warnings`）。
+   **macOS** 只跑 `pnpm verify:quick && pnpm build`。
+5. `git restore` 掉 verify 期间生成的 Tauri schema 等文件。
+6. `pnpm package:release`（`PIDECK_VERIFIED_SOURCE_COMMIT` 必须等于 HEAD）。
+7. `scripts/generate-update-manifest.mjs --stage-platform` 收集本平台资产。
+8. 上传 artifact `release-platform-<id>`。
+
+`create-release` job（Ubuntu）在两个平台都成功后：
+
+1. 下载全部 platform artifact。
+2. 合成跨平台 `latest.json`。
+3. 创建或更新 **Draft** GitHub Release，标题 `PaperMatrix <tag>`。
+   不会自动 Publish。
+
+### Repository secrets
+
+Settings → Secrets and variables → Actions → **Repository secrets**：
+
+| Secret | 是否必须 | 说明 |
+| --- | --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | 必须 | 本机 `apps/desktop/src-tauri/.tauri-updater.key` **全文**（含 untrusted comment） |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 可空 | 私钥无密码就不要填，或填空 |
+| `APPLE_CERTIFICATE` | 正式 Mac 发布才要 | base64 的 Developer ID `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | 同上 | |
+| `APPLE_SIGNING_IDENTITY` | 同上 | |
+| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` / `KEYCHAIN_PASSWORD` | 同上 | 七件套要么全有要么全没有 |
+
+公钥在 `apps/desktop/src-tauri/tauri.conf.json` 的
+`plugins.updater.pubkey`。更新源是
+`https://github.com/Theonx5/MatrixAgent/releases/latest/download/latest.json`。
+
+### 发一版的步骤
+
+```bash
+git checkout main
+git pull origin main
+pnpm format:changed
+pnpm verify:quick
+git push origin main
+# 等 P0 workflow 绿了再打 tag
+git tag -a v0.2.3 -m "PaperMatrix 0.2.3"
+git push origin v0.2.3
+```
+
+然后打开 https://github.com/Theonx5/MatrixAgent/actions 看
+`Release desktop installers`。成功后到 Releases 里检查 Draft，人工 Publish。
+
+已对外发布的 tag **不要** `git tag -f` / force-push。迭代未发布的 draft 才可以。
+
+### 代理改发布相关代码时
+
+- 改 `.github/workflows/`、`scripts/package-release*.mjs`、
+  `scripts/release-*.mjs`、`release-runtime.lock.json` 必须同步更新本节和
+  `docs/operations/release.md`。
+- 推送前至少跑 `pnpm format:changed` 和 `pnpm verify:quick`。
+- 新增未使用的 `export` 会被 knip 拦住；测试里的路径必须用
+  `pideck-data.ts` 的辅助函数，不要写死 `pideck/` 子目录。
+- Windows CI 对 Rust 执行 `cargo fmt --check` 和 `clippy -D warnings`。
+  本机没有 rustfmt 时，按 CI 日志里的 diff 改，或在能装 rustfmt 的环境格式化。
