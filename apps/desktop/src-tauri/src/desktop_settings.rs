@@ -365,28 +365,31 @@ impl DesktopSettingsStore {
 
     pub fn ensure_default_project_workspace(&mut self) -> Result<Option<PathBuf>, String> {
         let agent_dir = self.resolved_agent_dir();
-        let legacy_library = agent_dir.join(DEFAULT_PROJECT_DIR_NAME);
         let project_dir = default_library_dir(&agent_dir);
+        let install_library = packaged_library_dir();
         let current = first_configured_workspace(&self.settings);
-        let using_legacy_default = current
-            .as_ref()
-            .is_some_and(|path| same_path(Path::new(path), &legacy_library));
+        let using_install_default = current.as_ref().is_some_and(|path| {
+            install_library
+                .as_ref()
+                .is_some_and(|install| same_path(Path::new(path), install))
+        });
 
-        if current.is_some() && !using_legacy_default {
+        if current.is_some() && !using_install_default {
             return Ok(None);
         }
 
-        if using_legacy_default && !same_path(&legacy_library, &project_dir) {
-            relocate_directory(&legacy_library, &project_dir)?;
-            let mut next = self.settings.clone();
-            rewrite_workspace_path(&mut next, &legacy_library, &project_dir);
-            self.write_settings(&next)?;
-            self.settings = next;
-            seed_matrix_library_root(&agent_dir, &project_dir, Some(&legacy_library))?;
-            return Ok(Some(project_dir));
-        }
-
-        if current.is_some() {
+        if using_install_default {
+            if let Some(source) = install_library {
+                if !same_path(&source, &project_dir) {
+                    relocate_directory(&source, &project_dir)?;
+                    let mut next = self.settings.clone();
+                    rewrite_workspace_path(&mut next, &source, &project_dir);
+                    self.write_settings(&next)?;
+                    self.settings = next;
+                    seed_matrix_library_root(&agent_dir, &project_dir, Some(&source))?;
+                    return Ok(Some(project_dir));
+                }
+            }
             return Ok(None);
         }
 
@@ -489,14 +492,15 @@ fn packaged_install_dir() -> Option<PathBuf> {
     }
 }
 
+fn packaged_library_dir() -> Option<PathBuf> {
+    packaged_install_dir().map(|dir| dir.join(DEFAULT_PROJECT_DIR_NAME))
+}
+
 fn default_library_dir(agent_dir: &Path) -> PathBuf {
     default_library_dir_for(agent_dir, packaged_install_dir().as_deref())
 }
 
-fn default_library_dir_for(agent_dir: &Path, install_dir: Option<&Path>) -> PathBuf {
-    if let Some(dir) = install_dir {
-        return dir.join(DEFAULT_PROJECT_DIR_NAME);
-    }
+fn default_library_dir_for(agent_dir: &Path, _install_dir: Option<&Path>) -> PathBuf {
     agent_dir.join(DEFAULT_PROJECT_DIR_NAME)
 }
 
@@ -1153,12 +1157,12 @@ mod tests {
     }
 
     #[test]
-    fn default_library_prefers_the_install_directory() {
+    fn default_library_stays_under_the_agent_directory() {
         let agent = PathBuf::from(r"C:\Users\me\.MatrixAgent");
         let install = PathBuf::from(r"D:\Apps\PaperMatrix");
         assert_eq!(
             default_library_dir_for(&agent, Some(&install)),
-            PathBuf::from(r"D:\Apps\PaperMatrix\library")
+            agent.join("library")
         );
         assert_eq!(default_library_dir_for(&agent, None), agent.join("library"));
     }

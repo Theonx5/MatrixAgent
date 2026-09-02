@@ -21,4 +21,14 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; Never delete Pi CLI data (%USERPROFILE%\.pi). Tauri already removes
+  ; %APPDATA%\com.skitre.pideck when the user checks Delete application data.
+  ; Matrix Agent user files live in %USERPROFILE%\.MatrixAgent.
+  ${If} $DeleteAppDataCheckboxState = 1
+  ${AndIf} $UpdateMode <> 1
+    SetShellVarContext current
+    IfFileExists "$PROFILE\.MatrixAgent" 0 skip_matrix_agent_data
+      RMDir /r "$PROFILE\.MatrixAgent"
+    skip_matrix_agent_data:
+  ${EndIf}
 !macroend
