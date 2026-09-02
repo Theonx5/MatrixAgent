@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  HostEventEnvelope,
-  HostStatusSnapshot,
-  RehydrateSnapshot,
-  SessionSnapshot,
-  WorkspaceSnapshot,
+import {
+  createIdleMatrixStatus,
+  type HostEventEnvelope,
+  type HostStatusSnapshot,
+  type RehydrateSnapshot,
+  type SessionSnapshot,
+  type WorkspaceSnapshot,
 } from "@pideck/protocol";
 import { hostClient } from "../lib/bridge/host-client";
 import { RecoveryEventBuffer } from "../lib/bridge/rehydrate";
@@ -149,6 +150,7 @@ describe("atomic rehydrate replay", () => {
         updateCheck: { supported: false },
         diagnostics: [],
       },
+      matrix: createIdleMatrixStatus("/library"),
     };
     resolveResponse({ ok: true, result: snapshot });
     try {
@@ -243,6 +245,7 @@ describe("atomic rehydrate replay", () => {
         updateCheck: { supported: false },
         diagnostics: [],
       },
+      matrix: createIdleMatrixStatus("/library"),
     };
     resolveResponse({ ok: true, result: snapshot });
     await expect(running).resolves.toBe(true);
@@ -291,6 +294,7 @@ describe("atomic rehydrate replay", () => {
             updateCheck: { supported: false },
             diagnostics: [],
           },
+          matrix: createIdleMatrixStatus("/library"),
         },
       } as never;
     });

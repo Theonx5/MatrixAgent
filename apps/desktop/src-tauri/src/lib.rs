@@ -1,6 +1,7 @@
 mod browser_surface;
 mod commands;
 mod desktop_settings;
+mod secrets;
 mod draft_store;
 mod pi_host;
 #[cfg(test)]
@@ -147,6 +148,9 @@ pub fn run() {
             commands::browser_surface_set_visible,
             commands::browser_surface_focus,
             commands::browser_surface_close,
+            secrets::secrets_set,
+            secrets::secrets_get,
+            secrets::secrets_delete,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

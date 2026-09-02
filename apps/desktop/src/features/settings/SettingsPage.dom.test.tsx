@@ -106,7 +106,16 @@ describe("SettingsPage navigation guard", () => {
       within(navigation)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["General", "Appearance", "Providers", "Packages", "Usage", "Host", "Shortcuts"]);
+    ).toEqual([
+      "General",
+      "Appearance",
+      "Paper Matrix",
+      "Providers",
+      "Packages",
+      "Usage",
+      "Host",
+      "Shortcuts",
+    ]);
   });
 
   it("keeps startup controls in General and moves interface controls to Appearance", async () => {
@@ -141,6 +150,7 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByRole("group", { name: "Color mode" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Language" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Interface density" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Interface font size" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Conversation width" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Conversation font size" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Code font size" })).toBeInTheDocument();
@@ -158,6 +168,10 @@ describe("SettingsPage navigation guard", () => {
     );
     expect(document.documentElement.dataset.interfaceDensity).toBe("compact");
 
+    await user.click(screen.getByRole("button", { name: "Increase Interface font size" }));
+    await waitFor(() => expect(useAppStore.getState().desktopSettings?.uiFontSize).toBe(15));
+    expect(document.documentElement.style.getPropertyValue("--ui-font-size")).toBe("15px");
+
     await user.click(screen.getByRole("button", { name: "Increase Conversation font size" }));
     await waitFor(() =>
       expect(useAppStore.getState().desktopSettings?.conversationFontSize).toBe(15),
@@ -170,7 +184,7 @@ describe("SettingsPage navigation guard", () => {
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.codeFontSize).toBe(13));
     expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("13px");
     expect(screen.getByText("Readable conversation text with inline code.")).toBeInTheDocument();
-    expect(screen.getByText("15px")).toBeInTheDocument();
+    expect(screen.getAllByText("15px")).toHaveLength(2);
     expect(screen.getByText("13px")).toBeInTheDocument();
   });
 

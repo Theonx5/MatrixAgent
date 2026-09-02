@@ -1,11 +1,4 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  LoaderCircle,
-  MessageCirclePlus,
-  Search,
-  Settings,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, LoaderCircle, MessageCirclePlus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -14,6 +7,7 @@ import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
 import { NotificationCenter } from "./NotificationCenter";
+import { SidebarMatrixAccount } from "../features/matrix/SidebarMatrixAccount";
 import {
   createNewSession,
   isCreateSessionPending,
@@ -342,40 +336,13 @@ export function SidebarLayout({
             </div>
           </div>
 
-          <div className="shrink-0 border-t border-border p-2">
-            <button
-              type="button"
-              onClick={() => setPage(page === "chat" ? "settings" : "chat")}
-              data-ui="nav-item"
-              data-state={page !== "chat" ? "active" : "inactive"}
-              className={`interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm transition-colors ${
-                page !== "chat"
-                  ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                  : "text-foreground hover:bg-surface-overlay"
-              }`}
-            >
-              <Settings size={17} />
-              <span className="flex-1">{t("settingsTitle")}</span>
-              {connectionPending ? (
-                <span className="flex shrink-0" title={connectionTitle}>
-                  <LoaderCircle size={14} className="animate-spin text-muted" />
-                </span>
-              ) : (
-                <span
-                  className={`size-1.5 rounded-full ${
-                    hostFatal
-                      ? "bg-danger"
-                      : hostReady
-                        ? "bg-success"
-                        : host
-                          ? "bg-warning"
-                          : "bg-muted"
-                  }`}
-                  title={connectionTitle}
-                />
-              )}
-            </button>
-          </div>
+          <SidebarMatrixAccount
+            page={page}
+            connectionPending={connectionPending}
+            connectionTitle={connectionTitle}
+            hostFatal={hostFatal}
+            hostReady={Boolean(hostReady || host)}
+          />
         </div>
       )}
     </aside>

@@ -27,10 +27,11 @@ Landed behavior updates these pages in the same change.
 7. [Pi settings files](./architecture/pi-settings.md)
 8. [Commands, shortcuts, and context menus](./architecture/commands-and-menus.md)
 9. [Source map](./architecture/source-map.md)
-10. [P0 scope and verification](./operations/p0-scope.md)
-11. [Development](./operations/development.md)
-12. [Release](./operations/release.md)
-13. [Remediation / completion report](./operations/remediation-report.md)
+10. [Paper Matrix](./architecture/matrix.md)
+11. [P0 scope and verification](./operations/p0-scope.md)
+12. [Development](./operations/development.md)
+13. [Release](./operations/release.md)
+14. [Remediation / completion report](./operations/remediation-report.md)
 
 ## Document index
 
@@ -44,6 +45,7 @@ Landed behavior updates these pages in the same change.
 | [architecture/packages-workspaces.md](./architecture/packages-workspaces.md) | Current | Workspace loading, user-scope packages, catalog, resources |
 | [architecture/commands-and-menus.md](./architecture/commands-and-menus.md) | Current | Command registry, keyboard dispatch, and context-menu ownership |
 | [architecture/source-map.md](./architecture/source-map.md) | Current | Feature → source paths + gating scripts |
+| [architecture/matrix.md](./architecture/matrix.md) | Current | Paper Matrix auth, library sync, and academic workspace |
 | [operations/p0-scope.md](./operations/p0-scope.md) | Authoritative | Product P0/P1/P2 scope, acceptance evidence, verification layers |
 | [operations/p0-status.json](./operations/p0-status.json) | Machine-readable | Tracked implementation readiness and accepted-claim state |
 | [operations/development.md](./operations/development.md) | Current | Install, dev, test, env vars |

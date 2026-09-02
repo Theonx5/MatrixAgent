@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
 import {
   ArrowLeft,
+  BookOpen,
   ChartColumn,
   Keyboard,
   KeyRound,
@@ -32,6 +33,7 @@ import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { MatrixSettings } from "../matrix/MatrixSettings";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 
@@ -373,6 +375,7 @@ const SETTINGS_NAV: Array<{
 }> = [
   { id: "general", label: "navGeneral", icon: Settings2 },
   { id: "appearance", label: "navAppearance", icon: Palette },
+  { id: "matrix", label: "navMatrix", icon: BookOpen },
   { id: "providers", label: "navProviders", icon: KeyRound },
   { id: "packages", label: "navPackages", icon: Package },
   { id: "usage", label: "navUsage", icon: ChartColumn },
@@ -462,6 +465,8 @@ export function SettingsPage({
           <GeneralSettings />
         ) : section === "appearance" ? (
           <AppearanceSettings />
+        ) : section === "matrix" ? (
+          <MatrixSettings />
         ) : section === "shortcuts" ? (
           <ShortcutsSettings />
         ) : section === "providers" ? (

@@ -12,11 +12,14 @@ import {
   applyAppearancePreferences,
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_FONT_SIZE,
+  MAX_UI_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
+  MIN_UI_FONT_SIZE,
   resolveCodeFontSize,
   resolveConversationFontSize,
   resolveInterfaceDensity,
+  resolveUiFontSize,
 } from "../../lib/appearance-preferences";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -131,6 +134,7 @@ export function AppearanceSettings() {
   );
   const themeFamily = desktopSettings?.themeFamily ?? "pideck";
   const interfaceDensity = resolveInterfaceDensity(desktopSettings?.interfaceDensity);
+  const uiFontSize = resolveUiFontSize(desktopSettings?.uiFontSize);
   const conversationFontSize = resolveConversationFontSize(desktopSettings?.conversationFontSize);
   const codeFontSize = resolveCodeFontSize(desktopSettings?.codeFontSize);
   const [conversationWidthDraft, setConversationWidthDraft] = useState(
@@ -304,6 +308,23 @@ export function AppearanceSettings() {
                   value={interfaceDensity}
                   options={densityOptions}
                   onChange={(next) => void patchDesktop({ interfaceDensity: next })}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("appearanceUiFontSize")}</span>
+                  <span className="block text-xs text-muted">{t("appearanceUiFontSizeDesc")}</span>
+                </span>
+                <FontSizeStepper
+                  label={t("appearanceUiFontSize")}
+                  value={uiFontSize}
+                  min={MIN_UI_FONT_SIZE}
+                  max={MAX_UI_FONT_SIZE}
+                  decreaseLabel={t("appearanceDecrease", {
+                    setting: t("appearanceUiFontSize"),
+                  })}
+                  increaseLabel={t("appearanceIncrease", {
+                    setting: t("appearanceUiFontSize"),
+                  })}
+                  onChange={(value) => void patchDesktop({ uiFontSize: value })}
                 />
               </div>
             </div>

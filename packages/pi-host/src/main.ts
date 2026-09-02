@@ -6,7 +6,6 @@
 import "./sdk-adapters/install-host-sdk-adapters.js";
 import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   ModelRegistry,
@@ -20,7 +19,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { createHostError, type HostCapabilities } from "@pideck/protocol";
+import { createHostError, createIdleMatrixStatus, type HostCapabilities } from "@pideck/protocol";
 import { buildDegradedModelConfigHealth, buildModelConfigHealth } from "./model-health.js";
 import { recoverProviderJournals } from "./provider-journal.js";
 import { logger } from "./logger.js";
@@ -38,7 +37,12 @@ import { FileCredentialStore } from "./credential-store.js";
 import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
-import { migrateLegacyPideckData } from "./pideck-data.js";
+import {
+  isExternalPiAgentDir,
+  matrixLibraryRoot,
+  migrateLegacyPideckData,
+  resolveIsolatedAgentDir,
+} from "./pideck-data.js";
 import {
   applyHostNetworkSettings,
   ensureGlobalSettingsFile,
@@ -49,13 +53,15 @@ import { createAttachmentHandlers } from "./attachment-controller.js";
 import { createGitHandlers } from "./git-controller.js";
 import { GitService } from "./git-service.js";
 import { getInternalRuntime } from "./internal-runtime.js";
+import { createMatrixHandlers } from "./matrix/controller.js";
+import { MatrixService } from "./matrix/service.js";
 
 function resolveAgentDir(): string {
-  const envDir = process.env.PI_CODING_AGENT_DIR;
-  if (envDir && envDir.trim()) return envDir.trim();
   const arg = process.argv.find((a) => a.startsWith("--agent-dir="));
-  if (arg) return arg.slice("--agent-dir=".length);
-  return join(homedir(), ".pi", "agent");
+  return resolveIsolatedAgentDir({
+    envDir: process.env.PI_CODING_AGENT_DIR,
+    argDir: arg ? arg.slice("--agent-dir=".length) : null,
+  });
 }
 
 function resolveArg(prefix: string): string | null {
@@ -65,7 +71,9 @@ function resolveArg(prefix: string): string | null {
 }
 
 function resolveInitialCwd(): string | null {
-  return resolveArg("--initial-cwd=");
+  const cwd = resolveArg("--initial-cwd=");
+  if (!cwd || isExternalPiAgentDir(cwd)) return null;
+  return cwd;
 }
 
 function resolveInitialSessionBootstrap(): {
@@ -263,6 +271,7 @@ async function main(): Promise<void> {
   const runtime = getInternalRuntime();
   const gitService = new GitService(runtime.gitExecutable ?? "git", runtime.env);
 
+  const matrixRef: { service: MatrixService | null } = { service: null };
   const handlers = {
     ...createWorkspaceHandlers(graphFactory, workspaceFiles, gitService),
     ...createGitHandlers(graphFactory, gitService),
@@ -272,6 +281,7 @@ async function main(): Promise<void> {
     ...createProviderHandlers(graphFactory),
     ...createPackageHandlers(graphFactory),
     ...createExtensionUiHandlers(graphFactory),
+    ...createMatrixHandlers(() => matrixRef.service),
   };
 
   const server = new PiHostServer({
@@ -288,9 +298,11 @@ async function main(): Promise<void> {
         session,
         tools: session?.tools ?? null,
         packages: graph?.packageSnapshot ?? null,
+        matrix: matrixRef.service?.status() ?? createIdleMatrixStatus(matrixLibraryRoot(agentDir)),
       };
     },
     onShutdown: async () => {
+      await matrixRef.service?.stop();
       workspaceFiles.dispose();
       gitService.dispose();
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
@@ -308,6 +320,20 @@ async function main(): Promise<void> {
   });
 
   graphFactory.bindServer(server);
+
+  const matrixService = new MatrixService({
+    agentDir,
+    emit: {
+      status: (payload) => {
+        server.emit("matrix.statusChanged", payload);
+      },
+      progress: (payload) => {
+        server.emit("matrix.progress", payload);
+      },
+    },
+  });
+  matrixRef.service = matrixService;
+  await matrixService.start();
 
   // Re-emit status when model health is refreshed by controllers
   graphFactory.onModelHealthChanged = () => {
@@ -374,6 +400,7 @@ async function main(): Promise<void> {
     }
   }
 
+  matrixService.startBackground();
   await server.start();
 }
 

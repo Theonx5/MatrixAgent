@@ -45,6 +45,7 @@ import {
 } from "../lib/chat/extension-terminal-bus";
 import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
 import { CommandLayer } from "../lib/commands/CommandLayer";
+import { silentMatrixRelogin } from "../lib/matrix-session";
 import {
   resolveWindowFrameAttribute,
   resolveWindowFrameMode,
@@ -129,6 +130,7 @@ export async function runFullRehydrate(
       ...snap,
       lastSequence: snap.watermark,
     });
+    void silentMatrixRelogin();
     if (recovered.overflowed) {
       requestRecovery("recovery event buffer overflowed");
       return false;
@@ -511,6 +513,13 @@ export function handleHostEvent(
       }
       break;
     }
+    case "matrix.statusChanged":
+      store.setMatrixStatus(event.payload);
+      if (event.payload.authRequired) void silentMatrixRelogin();
+      break;
+    case "matrix.progress":
+      store.applyMatrixProgress(event.payload);
+      break;
     default:
       break;
   }

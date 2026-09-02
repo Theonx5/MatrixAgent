@@ -107,6 +107,28 @@ This automation produces development candidates; it does not publish a
 supported release and does not replace the installed-app smoke, signature
 verification, or human acceptance requirements below.
 
+## Signing
+
+Two signatures are involved:
+
+1. **Tauri updater (minisign).** `pnpm package:release` loads
+   `TAURI_SIGNING_PRIVATE_KEY` or `apps/desktop/src-tauri/.tauri-updater.key`
+   (gitignored). The matching public key is `plugins.updater.pubkey` in
+   `apps/desktop/src-tauri/tauri.conf.json`. Losing the private key breaks
+   update verification for installed apps.
+2. **Windows Authenticode.** `pnpm package:release` and `pnpm sign:windows`
+   sign `pideck.exe` and the NSIS installer. Set
+   `PIDECK_WINDOWS_CERT_THUMBPRINT` to a purchased OV/EV certificate for a
+   public release. Without it, a local `CN=PaperMatrix` self-signed cert is
+   created in `CurrentUser\My` — enough for `signtool verify`, not enough to
+   silence SmartScreen.
+
+```powershell
+pnpm sign:windows
+# or
+pnpm sign:windows path\to\PaperMatrix_0.2.2_x64-setup.exe
+```
+
 ## Public Release Requirements
 
 Before publishing any installer as a supported release:

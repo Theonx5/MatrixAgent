@@ -1,7 +1,29 @@
 import { chmod, lstat, mkdir, readdir, rename, rmdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, resolve as pathResolve } from "node:path";
 
 const DIR_MODE = 0o700;
+
+export function isExternalPiAgentDir(dir: string): boolean {
+  const normalized = dir.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase();
+  return normalized.endsWith("/.pi/agent") || normalized.includes("/.pi/agent/");
+}
+
+export function defaultMatrixAgentDir(home = homedir()): string {
+  return join(home, ".MatrixAgent");
+}
+
+export function resolveIsolatedAgentDir(options: {
+  envDir?: string | null;
+  argDir?: string | null;
+  home?: string;
+}): string {
+  for (const candidate of [options.envDir, options.argDir]) {
+    const trimmed = candidate?.trim();
+    if (trimmed && !isExternalPiAgentDir(trimmed)) return trimmed;
+  }
+  return defaultMatrixAgentDir(options.home);
+}
 
 export const PIDECK_MODEL_BACKUP_PATTERN = /^models-(\d+)-[0-9a-f]{8}\.bak$/u;
 
@@ -11,7 +33,7 @@ export function workspaceStorageKey(cwd: string): string {
 }
 
 export function pideckDataDir(agentDir: string): string {
-  return join(pathResolve(agentDir), "pideck");
+  return pathResolve(agentDir);
 }
 
 export function migrationBackupRoot(agentDir: string, migrationId: string): string {
@@ -32,6 +54,18 @@ function sessionArchiveRoot(agentDir: string): string {
 
 export function attachmentRoot(agentDir: string): string {
   return join(pideckDataDir(agentDir), "attachments");
+}
+
+export function matrixLibraryRoot(agentDir: string): string {
+  return join(pideckDataDir(agentDir), "library");
+}
+
+export function matrixAuthPath(agentDir: string): string {
+  return join(pideckDataDir(agentDir), "matrix-auth.json");
+}
+
+export function matrixSettingsPath(agentDir: string): string {
+  return join(pideckDataDir(agentDir), "matrix-settings.json");
 }
 
 export function sessionArchiveDir(agentDir: string, cwd: string): string {
@@ -56,7 +90,12 @@ async function ensurePrivateDirectory(path: string): Promise<void> {
   if (process.platform !== "win32") await chmod(path, DIR_MODE);
 }
 
+function sameResolvedPath(left: string, right: string): boolean {
+  return pathResolve(left) === pathResolve(right);
+}
+
 async function moveLegacyTree(source: string, target: string): Promise<void> {
+  if (sameResolvedPath(source, target)) return;
   const sourceKind = await pathKind(source);
   if (sourceKind === null) return;
 

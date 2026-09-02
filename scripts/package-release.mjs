@@ -21,6 +21,12 @@ import { createHash } from "node:crypto";
 import { inspectWindowsInstaller } from "./windows-installer-integrity.mjs";
 import { writeReleaseResourceManifest } from "./release-resource-manifest.mjs";
 import { currentSourceCommit, verifiedSourceBuildCommit } from "./verified-source-build.mjs";
+import {
+  applyUpdaterSigningEnv,
+  ensureWindowsCodeSigningCert,
+  signWindowsPe,
+  verifyWindowsPe,
+} from "./release-signing.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.platform === "darwin") {
@@ -233,6 +239,15 @@ function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
   return errors;
 }
 
+const updaterSigning = applyUpdaterSigningEnv(root);
+if (updaterSigning.applied) {
+  console.log(`[package:release] updater signing key from ${updaterSigning.source}`);
+} else {
+  console.warn(
+    "[package:release] no TAURI_SIGNING_PRIVATE_KEY or apps/desktop/src-tauri/.tauri-updater.key; updater artifacts will fail",
+  );
+}
+
 const startedAt = new Date().toISOString();
 let reusedSourceBuildCommit = null;
 try {
@@ -313,6 +328,32 @@ const desktopExecutable = join(bundleRoot, "pideck.exe");
 const installer = timedStage("locate primary bundle output", () =>
   findPrimaryInstaller(bundleRoot),
 );
+let authenticode = null;
+if (installer && existsSync(installer)) {
+  try {
+    authenticode = timedStage("Authenticode-sign installer", () => {
+      const cert = ensureWindowsCodeSigningCert();
+      const signed = [installer, desktopExecutable].filter((path) => existsSync(path)).map((path) => {
+        const result = signWindowsPe(path, cert.thumbprint);
+        const verify = verifyWindowsPe(path);
+        if (!verify.ok) {
+          throw new Error(`Authenticode verify failed for ${path}: ${verify.output}`);
+        }
+        return { path, ...result, verify: verify.ok, thumbprint: cert.thumbprint };
+      });
+      return { thumbprint: cert.thumbprint, files: signed };
+    });
+  } catch (error) {
+    console.warn(
+      "[package:release] Authenticode signing skipped:",
+      error instanceof Error ? error.message : String(error),
+    );
+    authenticode = {
+      skipped: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
 const packagedRuntimeErrors = timedStage("validate packaged runtime", () =>
   validatePackagedRuntime(bundleRoot, resourceManifestProof.manifest),
 );
@@ -367,6 +408,7 @@ if (
     sourceInstallerIntegrity,
     desktopFresh,
     packagedRuntimeErrors,
+    authenticode,
   });
   console.error(
     "package:release FAIL",
@@ -471,6 +513,7 @@ const manifest = writeManifest({
   desktopFresh,
   packagedRuntimeValidated: true,
   packagedRuntimeErrors,
+  authenticode,
   resourceManifestPath: resourceManifestProof.path,
   resourceManifestSha256: resourceManifestProof.sha256,
   resourceManifest: resourceManifestProof.manifest,

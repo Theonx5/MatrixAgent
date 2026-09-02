@@ -5,10 +5,12 @@ import {
   resolveCodeFontSize,
   resolveConversationFontSize,
   resolveInterfaceDensity,
+  resolveUiFontSize,
 } from "./appearance-preferences";
 
 afterEach(() => {
   document.documentElement.removeAttribute("data-interface-density");
+  document.documentElement.style.removeProperty("--ui-font-size");
   document.documentElement.style.removeProperty("--conversation-font-size");
   document.documentElement.style.removeProperty("--code-font-size");
 });
@@ -17,6 +19,8 @@ describe("appearance preferences", () => {
   it("resolves missing and stale values to bounded defaults", () => {
     expect(resolveInterfaceDensity(undefined)).toBe("standard");
     expect(resolveInterfaceDensity("dense")).toBe("standard");
+    expect(resolveUiFontSize(undefined)).toBe(14);
+    expect(resolveUiFontSize(30)).toBe(18);
     expect(resolveConversationFontSize(undefined)).toBe(14);
     expect(resolveConversationFontSize(30)).toBe(18);
     expect(resolveCodeFontSize(4)).toBe(10);
@@ -30,11 +34,13 @@ describe("appearance preferences", () => {
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",
       interfaceDensity: "comfortable",
+      uiFontSize: 16,
       conversationFontSize: 17,
       codeFontSize: 15,
     });
 
     expect(document.documentElement.dataset.interfaceDensity).toBe("comfortable");
+    expect(document.documentElement.style.getPropertyValue("--ui-font-size")).toBe("16px");
     expect(document.documentElement.style.getPropertyValue("--conversation-font-size")).toBe(
       "17px",
     );

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -9,10 +9,12 @@ use uuid::Uuid;
 
 const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
-const PIDECK_DATA_DIR_NAME: &str = "pideck";
-const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
+const DEFAULT_PROJECT_DIR_NAME: &str = "library";
 const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 668;
 const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
+const DEFAULT_UI_FONT_SIZE: u32 = 14;
+const MIN_UI_FONT_SIZE: u32 = 12;
+const MAX_UI_FONT_SIZE: u32 = 18;
 const DEFAULT_CONVERSATION_FONT_SIZE: u32 = 14;
 const MIN_CONVERSATION_FONT_SIZE: u32 = 12;
 const MAX_CONVERSATION_FONT_SIZE: u32 = 18;
@@ -115,6 +117,7 @@ pub struct DesktopSettings {
     pub language: Option<DesktopLanguage>,
     pub interface_density: DesktopInterfaceDensity,
     pub conversation_content_width: u32,
+    pub ui_font_size: u32,
     pub conversation_font_size: u32,
     pub code_font_size: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -140,6 +143,7 @@ impl Default for DesktopSettings {
             language: None,
             interface_density: DesktopInterfaceDensity::Standard,
             conversation_content_width: DEFAULT_CONVERSATION_CONTENT_WIDTH,
+            ui_font_size: DEFAULT_UI_FONT_SIZE,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             known_workspaces: Vec::new(),
@@ -209,16 +213,24 @@ impl DesktopSettingsStore {
 
         let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         match Self::parse_settings(&raw) {
-            Ok((settings, legacy)) => {
+            Ok((mut settings, legacy)) => {
+                let scrubbed = sanitize_external_pi_settings(&mut settings);
                 let store = Self {
                     path,
                     settings,
-                    warning: legacy.then(|| {
-                        "Desktop settings were migrated to the current versioned format".into()
-                    }),
+                    warning: if scrubbed {
+                        Some(
+                            "Ignored a Pi CLI directory (~/.pi/agent); Matrix Agent uses ~/.MatrixAgent"
+                                .into(),
+                        )
+                    } else {
+                        legacy.then(|| {
+                            "Desktop settings were migrated to the current versioned format".into()
+                        })
+                    },
                     recovered_from: None,
                 };
-                if legacy {
+                if legacy || scrubbed {
                     store.save()?;
                 }
                 Ok(store)
@@ -259,6 +271,9 @@ impl DesktopSettingsStore {
         settings.conversation_content_width = settings
             .conversation_content_width
             .max(MIN_CONVERSATION_CONTENT_WIDTH);
+        settings.ui_font_size = settings
+            .ui_font_size
+            .clamp(MIN_UI_FONT_SIZE, MAX_UI_FONT_SIZE);
         settings.conversation_font_size = settings
             .conversation_font_size
             .clamp(MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE);
@@ -272,6 +287,11 @@ impl DesktopSettingsStore {
         if settings.conversation_content_width < MIN_CONVERSATION_CONTENT_WIDTH {
             return Err(format!(
                 "conversationContentWidth must be at least {MIN_CONVERSATION_CONTENT_WIDTH}"
+            ));
+        }
+        if !(MIN_UI_FONT_SIZE..=MAX_UI_FONT_SIZE).contains(&settings.ui_font_size) {
+            return Err(format!(
+                "uiFontSize must be between {MIN_UI_FONT_SIZE} and {MAX_UI_FONT_SIZE}"
             ));
         }
         if !(MIN_CONVERSATION_FONT_SIZE..=MAX_CONVERSATION_FONT_SIZE)
@@ -351,29 +371,35 @@ impl DesktopSettingsStore {
     }
 
     pub fn ensure_default_project_workspace(&mut self) -> Result<Option<PathBuf>, String> {
-        let has_workspace = self
-            .settings
-            .default_workspace
-            .as_deref()
-            .is_some_and(|path| !path.trim().is_empty())
-            || self
-                .settings
-                .last_workspace
-                .as_deref()
-                .is_some_and(|path| !path.trim().is_empty())
-            || self
-                .settings
-                .known_workspaces
-                .iter()
-                .any(|path| !path.trim().is_empty());
-        if has_workspace {
+        let agent_dir = self.resolved_agent_dir();
+        let legacy_library = agent_dir.join(DEFAULT_PROJECT_DIR_NAME);
+        let project_dir = default_library_dir(&agent_dir);
+        let current = first_configured_workspace(&self.settings);
+        let using_legacy_default = current
+            .as_ref()
+            .is_some_and(|path| same_path(Path::new(path), &legacy_library));
+
+        if current.is_some() && !using_legacy_default {
             return Ok(None);
         }
 
-        let namespace_dir = self.resolved_agent_dir().join(PIDECK_DATA_DIR_NAME);
-        let project_dir = namespace_dir.join(DEFAULT_PROJECT_DIR_NAME);
-        create_private_directory(&namespace_dir)?;
+        if using_legacy_default && !same_path(&legacy_library, &project_dir) {
+            relocate_directory(&legacy_library, &project_dir)?;
+            let mut next = self.settings.clone();
+            rewrite_workspace_path(&mut next, &legacy_library, &project_dir);
+            self.write_settings(&next)?;
+            self.settings = next;
+            seed_matrix_library_root(&agent_dir, &project_dir, Some(&legacy_library))?;
+            return Ok(Some(project_dir));
+        }
+
+        if current.is_some() {
+            return Ok(None);
+        }
+
+        create_private_directory(&agent_dir)?;
         create_private_directory(&project_dir)?;
+        seed_matrix_library_root(&agent_dir, &project_dir, None)?;
 
         let project_path = project_dir.to_string_lossy().into_owned();
         let mut next = self.settings.clone();
@@ -407,6 +433,7 @@ impl DesktopSettingsStore {
                     | "language"
                     | "interfaceDensity"
                     | "conversationContentWidth"
+                    | "uiFontSize"
                     | "conversationFontSize"
                     | "codeFontSize"
                     | "knownWorkspaces"
@@ -421,8 +448,18 @@ impl DesktopSettingsStore {
         for (key, value) in patch_object {
             current_object.insert(key.clone(), value.clone());
         }
-        let next = serde_json::from_value(current).map_err(|e| e.to_string())?;
+        let mut next = serde_json::from_value(current).map_err(|e| e.to_string())?;
         Self::validate_settings(&next)?;
+        if next
+            .agent_dir
+            .as_deref()
+            .is_some_and(looks_like_external_pi_agent_path)
+        {
+            return Err(
+                "Matrix Agent cannot use the Pi CLI directory (~/.pi/agent)".into(),
+            );
+        }
+        sanitize_external_pi_settings(&mut next);
         self.write_settings(&next)?;
         self.settings = next;
         Ok(self.settings.clone())
@@ -430,13 +467,266 @@ impl DesktopSettingsStore {
 
     pub fn resolved_agent_dir(&self) -> PathBuf {
         if let Some(ref dir) = self.settings.agent_dir {
-            return PathBuf::from(dir);
+            if !looks_like_external_pi_agent_path(dir) {
+                return PathBuf::from(dir);
+            }
         }
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".pi")
-            .join("agent")
+        default_matrix_agent_dir()
     }
+}
+
+fn default_matrix_agent_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".MatrixAgent")
+}
+
+fn packaged_install_dir() -> Option<PathBuf> {
+    if cfg!(any(test, debug_assertions)) {
+        return None;
+    }
+    #[cfg(windows)]
+    {
+        return std::env::current_exe().ok().and_then(|exe| {
+            exe.parent()
+                .map(|dir| strip_verbatim_prefix(dir.to_path_buf()))
+        });
+    }
+    #[cfg(not(windows))]
+    None
+}
+
+fn default_library_dir(agent_dir: &Path) -> PathBuf {
+    default_library_dir_for(agent_dir, packaged_install_dir().as_deref())
+}
+
+fn default_library_dir_for(agent_dir: &Path, install_dir: Option<&Path>) -> PathBuf {
+    if let Some(dir) = install_dir {
+        return dir.join(DEFAULT_PROJECT_DIR_NAME);
+    }
+    agent_dir.join(DEFAULT_PROJECT_DIR_NAME)
+}
+
+fn first_configured_workspace(settings: &DesktopSettings) -> Option<String> {
+    for candidate in [
+        settings.default_workspace.as_deref(),
+        settings.last_workspace.as_deref(),
+    ] {
+        if let Some(path) = candidate.map(str::trim).filter(|path| !path.is_empty()) {
+            return Some(path.to_string());
+        }
+    }
+    settings
+        .known_workspaces
+        .iter()
+        .map(|path| path.trim())
+        .find(|path| !path.is_empty())
+        .map(ToString::to_string)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    let normalize = |path: &Path| {
+        path.to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    };
+    normalize(left) == normalize(right)
+}
+
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        const PREFIX: &str = r"\\?\";
+        let value = path.to_string_lossy();
+        if let Some(rest) = value.strip_prefix(PREFIX) {
+            return PathBuf::from(rest);
+        }
+    }
+    path
+}
+
+fn rewrite_workspace_path(settings: &mut DesktopSettings, from: &Path, to: &Path) {
+    let to_s = to.to_string_lossy().into_owned();
+    if settings
+        .default_workspace
+        .as_deref()
+        .is_some_and(|path| same_path(Path::new(path), from))
+    {
+        settings.default_workspace = Some(to_s.clone());
+    }
+    if settings
+        .last_workspace
+        .as_deref()
+        .is_some_and(|path| same_path(Path::new(path), from))
+    {
+        settings.last_workspace = Some(to_s.clone());
+    }
+    settings.known_workspaces = settings
+        .known_workspaces
+        .iter()
+        .map(|path| {
+            if same_path(Path::new(path), from) {
+                to_s.clone()
+            } else {
+                path.clone()
+            }
+        })
+        .collect();
+    if !settings
+        .known_workspaces
+        .iter()
+        .any(|path| same_path(Path::new(path), to))
+    {
+        settings.known_workspaces.insert(0, to_s);
+    }
+}
+
+fn copy_dir_all(source: &Path, dest: &Path) -> Result<(), String> {
+    create_private_directory(dest)?;
+    for entry in fs::read_dir(source).map_err(|error| {
+        format!("read directory {}: {error}", source.display())
+    })? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        let target = dest.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target).map_err(|error| {
+                format!("copy {} -> {}: {error}", entry.path().display(), target.display())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn relocate_directory(source: &Path, dest: &Path) -> Result<(), String> {
+    if same_path(source, dest) {
+        create_private_directory(dest)?;
+        return Ok(());
+    }
+    if let Some(parent) = dest.parent() {
+        create_private_directory(parent)?;
+    }
+    if !source.exists() {
+        create_private_directory(dest)?;
+        return Ok(());
+    }
+    if dest.exists() {
+        return Ok(());
+    }
+    match fs::rename(source, dest) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if error.kind() == io::ErrorKind::CrossesDevices
+                || error.raw_os_error() == Some(17) =>
+        {
+            copy_dir_all(source, dest)?;
+            fs::remove_dir_all(source).map_err(|error| {
+                format!("remove moved library {}: {error}", source.display())
+            })?;
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "move library {} -> {}: {error}",
+            source.display(),
+            dest.display()
+        )),
+    }
+}
+
+fn seed_matrix_library_root(
+    agent_dir: &Path,
+    library_root: &Path,
+    replace_legacy: Option<&Path>,
+) -> Result<(), String> {
+    create_private_directory(agent_dir)?;
+    let path = agent_dir.join("matrix-settings.json");
+    let mut value = if path.exists() {
+        let raw = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({
+            "pollIntervalMin": 30,
+            "withAbstract": true
+        })
+    };
+    let Some(object) = value.as_object_mut() else {
+        return Ok(());
+    };
+    let current = object
+        .get("libraryRoot")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let matches_legacy =
+        replace_legacy.is_some_and(|legacy| same_path(Path::new(current), legacy));
+    if !current.trim().is_empty() && !matches_legacy {
+        return Ok(());
+    }
+    object.insert(
+        "libraryRoot".into(),
+        serde_json::Value::String(library_root.to_string_lossy().into_owned()),
+    );
+    object
+        .entry("pollIntervalMin".to_string())
+        .or_insert(serde_json::json!(30));
+    object
+        .entry("withAbstract".to_string())
+        .or_insert(serde_json::json!(true));
+    let raw = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
+    let temp = agent_dir.join(format!(
+        ".matrix-settings.json.{}.{}.tmp",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    let write_result = (|| -> Result<(), String> {
+        let mut file = File::create(&temp).map_err(|error| error.to_string())?;
+        file.write_all(&raw).map_err(|error| error.to_string())?;
+        file.write_all(b"\n").map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        replace_file(&temp, &path)
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    write_result
+}
+
+fn looks_like_external_pi_agent_path(value: &str) -> bool {
+    let normalized = value.replace('\\', "/").to_ascii_lowercase();
+    let trimmed = normalized.trim_end_matches('/');
+    trimmed.ends_with("/.pi/agent") || trimmed.contains("/.pi/agent/")
+}
+
+fn sanitize_external_pi_settings(settings: &mut DesktopSettings) -> bool {
+    let mut changed = false;
+    if settings
+        .agent_dir
+        .as_deref()
+        .is_some_and(looks_like_external_pi_agent_path)
+    {
+        settings.agent_dir = None;
+        changed = true;
+    }
+    for field in [
+        &mut settings.default_workspace,
+        &mut settings.last_workspace,
+        &mut settings.last_session_path,
+    ] {
+        if field.as_deref().is_some_and(looks_like_external_pi_agent_path) {
+            *field = None;
+            changed = true;
+        }
+    }
+    let before = settings.known_workspaces.len();
+    settings
+        .known_workspaces
+        .retain(|path| !looks_like_external_pi_agent_path(path));
+    changed || settings.known_workspaces.len() != before
 }
 
 fn create_private_directory(path: &Path) -> Result<(), String> {
@@ -525,6 +815,7 @@ mod tests {
             serde_json::json!({ "themeFamily": "neon" }),
             serde_json::json!({ "language": "fr" }),
             serde_json::json!({ "interfaceDensity": "dense" }),
+            serde_json::json!({ "uiFontSize": 11 }),
             serde_json::json!({ "conversationFontSize": 11 }),
             serde_json::json!({ "codeFontSize": 19 }),
             serde_json::json!({ "terminalProfile": "nu" }),
@@ -585,6 +876,7 @@ mod tests {
             DesktopInterfaceDensity::Standard
         );
         assert_eq!(store.settings.theme_family, DesktopThemeFamily::Pideck);
+        assert_eq!(store.settings.ui_font_size, DEFAULT_UI_FONT_SIZE);
         assert_eq!(
             store.settings.conversation_font_size,
             DEFAULT_CONVERSATION_FONT_SIZE
@@ -595,6 +887,7 @@ mod tests {
             .patch(serde_json::json!({
                 "themeFamily": "vercel",
                 "interfaceDensity": "compact",
+                "uiFontSize": 16,
                 "conversationFontSize": 17,
                 "codeFontSize": 15
             }))
@@ -605,6 +898,7 @@ mod tests {
             DesktopInterfaceDensity::Compact
         );
         assert_eq!(reloaded.settings.theme_family, DesktopThemeFamily::Vercel);
+        assert_eq!(reloaded.settings.ui_font_size, 16);
         assert_eq!(reloaded.settings.conversation_font_size, 17);
         assert_eq!(reloaded.settings.code_font_size, 15);
 
@@ -616,6 +910,11 @@ mod tests {
         assert_eq!(reloaded.settings.theme_family, DesktopThemeFamily::Apple);
 
         let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "uiFontSize": 19 }))
+            .unwrap_err()
+            .contains("between 12 and 18"));
+        assert_eq!(invalid.settings.ui_font_size, 16);
         assert!(invalid
             .patch(serde_json::json!({ "conversationFontSize": 19 }))
             .unwrap_err()
@@ -813,7 +1112,7 @@ mod tests {
     fn initializes_and_persists_the_default_project_workspace() {
         let dir = test_dir("default-project");
         let agent_dir = dir.join("agent");
-        let project_dir = agent_dir.join("pideck").join("DefaultProject");
+        let project_dir = agent_dir.join("library");
         let project_path = project_dir.to_string_lossy().into_owned();
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         store.settings.agent_dir = Some(agent_dir.to_string_lossy().into_owned());
@@ -832,13 +1131,7 @@ mod tests {
 
         #[cfg(unix)]
         {
-            let namespace_mode = fs::metadata(agent_dir.join("pideck"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777;
             let project_mode = fs::metadata(&project_dir).unwrap().permissions().mode() & 0o777;
-            assert_eq!(namespace_mode, 0o700);
             assert_eq!(project_mode, 0o700);
         }
 
@@ -851,6 +1144,31 @@ mod tests {
             Some(project_path.as_str())
         );
         assert_eq!(reloaded.settings.known_workspaces, vec![project_path]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn default_library_prefers_the_install_directory() {
+        let agent = PathBuf::from(r"C:\Users\me\.MatrixAgent");
+        let install = PathBuf::from(r"D:\Apps\PaperMatrix");
+        assert_eq!(
+            default_library_dir_for(&agent, Some(&install)),
+            PathBuf::from(r"D:\Apps\PaperMatrix\library")
+        );
+        assert_eq!(default_library_dir_for(&agent, None), agent.join("library"));
+    }
+
+    #[test]
+    fn relocates_a_legacy_library_directory() {
+        let dir = test_dir("relocate-library");
+        let source = dir.join("agent").join("library");
+        let dest = dir.join("install").join("library");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("paper.md"), "hello").unwrap();
+
+        relocate_directory(&source, &dest).unwrap();
+        assert_eq!(fs::read_to_string(dest.join("paper.md")).unwrap(), "hello");
+        assert!(!source.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -883,8 +1201,45 @@ mod tests {
 
             assert_eq!(store.ensure_default_project_workspace().unwrap(), None);
             assert_eq!(serde_json::to_value(&store.settings).unwrap(), before);
-            assert!(!agent_dir.join("pideck").join("DefaultProject").exists());
+            assert!(!agent_dir.join("library").exists());
             fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    #[test]
+    fn forgets_external_pi_agent_paths_on_load() {
+        let dir = test_dir("scrub-pi-agent");
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            serde_json::json!({
+                "schemaVersion": SETTINGS_SCHEMA_VERSION,
+                "settings": {
+                    "theme": "system",
+                    "restoreLastSession": true,
+                    "autoRestartHostOnce": true,
+                    "extensionDecisionPresentation": "legacy-modal",
+                    "terminalProfile": "auto",
+                    "agentDir": "C:/Users/me/.pi/agent",
+                    "lastWorkspace": "C:/Users/me/.pi/agent/library",
+                    "knownWorkspaces": [
+                        "C:/Users/me/.pi/agent/library",
+                        "D:/papers"
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(loaded.settings.agent_dir, None);
+        assert_eq!(loaded.settings.last_workspace, None);
+        assert_eq!(loaded.settings.known_workspaces, vec!["D:/papers".to_string()]);
+        assert!(loaded
+            .snapshot()
+            .warning
+            .unwrap()
+            .contains("Pi CLI directory"));
+        fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -60,7 +60,9 @@ describe("Sidebar", () => {
       expect(html).toContain("New conversation");
       expect(html).toContain("Workspaces");
       expect(html).toContain("Recent conversations");
+      expect(html).toContain("Log in");
       expect(html).toContain("Settings");
+      expect(html).toContain("data-sidebar-matrix");
       expect(html).toContain("data-sidebar-workspaces");
       expect(html).toContain("data-sidebar-split");
       expect(html).toContain("Resize workspaces and conversations");

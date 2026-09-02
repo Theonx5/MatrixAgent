@@ -11,11 +11,13 @@ import { basename, dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MIGRATION_ID } from "./migration-backup.js";
 import {
+  isExternalPiAgentDir,
   migrateLegacyPideckData,
   migrationBackupRoot,
   modelBackupDir,
   pideckDataDir,
   providerJournalRoot,
+  resolveIsolatedAgentDir,
   sessionArchiveDir,
 } from "./pideck-data.js";
 
@@ -41,20 +43,43 @@ function write(path: string, content: string): void {
   writeFileSync(path, content);
 }
 
+describe("isolated agent directory", () => {
+  it("rejects the external Pi CLI agent path", () => {
+    expect(isExternalPiAgentDir("C:\\Users\\me\\.pi\\agent")).toBe(true);
+    expect(isExternalPiAgentDir("/home/me/.pi/agent/library")).toBe(true);
+    expect(isExternalPiAgentDir("/home/me/.MatrixAgent")).toBe(false);
+  });
+
+  it("ignores PI_CODING_AGENT_DIR when it points at the Pi CLI", () => {
+    expect(
+      resolveIsolatedAgentDir({
+        envDir: "/home/me/.pi/agent",
+        argDir: null,
+        home: "/home/me",
+      }),
+    ).toBe(join("/home/me", ".MatrixAgent"));
+    expect(
+      resolveIsolatedAgentDir({
+        envDir: "/tmp/test-agent",
+        argDir: null,
+        home: "/home/me",
+      }),
+    ).toBe("/tmp/test-agent");
+  });
+});
+
 describe("PiDeck data paths", () => {
   it("keeps every PiDeck-owned storage family under one agent namespace", () => {
     const { agentDir, cwd, safePath } = createFixture();
 
-    expect(pideckDataDir(agentDir)).toBe(join(agentDir, "pideck"));
+    expect(pideckDataDir(agentDir)).toBe(resolve(agentDir));
     expect(migrationBackupRoot(agentDir, MIGRATION_ID)).toBe(
-      join(agentDir, "pideck", "migration-backups", MIGRATION_ID),
+      join(resolve(agentDir), "migration-backups", MIGRATION_ID),
     );
-    expect(providerJournalRoot(agentDir)).toBe(
-      join(agentDir, "pideck", "provider-journal"),
-    );
-    expect(modelBackupDir(agentDir)).toBe(join(agentDir, "pideck", "model-backups"));
+    expect(providerJournalRoot(agentDir)).toBe(join(resolve(agentDir), "provider-journal"));
+    expect(modelBackupDir(agentDir)).toBe(join(resolve(agentDir), "model-backups"));
     expect(sessionArchiveDir(agentDir, cwd)).toBe(
-      join(agentDir, "pideck", "session-archive", safePath),
+      join(resolve(agentDir), "session-archive", safePath),
     );
   });
 });
@@ -95,7 +120,7 @@ describe("migrateLegacyPideckData", () => {
       "session",
     );
     expect(existsSync(join(agentDir, "backups", MIGRATION_ID))).toBe(false);
-    expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
+    expect(existsSync(join(agentDir, "provider-journal"))).toBe(true);
     expect(existsSync(legacyModelBackup)).toBe(false);
     expect(existsSync(join(agentDir, "sessions", safePath, ".archive"))).toBe(false);
     expect(readFileSync(unrelatedBackup, "utf8")).toBe("user backup");
@@ -103,22 +128,24 @@ describe("migrateLegacyPideckData", () => {
 
   it("merges non-conflicting entries after a partially completed migration", async () => {
     const { agentDir } = createFixture();
-    write(join(agentDir, "provider-journal", "legacy-entry", "journal.json"), "legacy");
-    write(join(providerJournalRoot(agentDir), "new-entry", "journal.json"), "new");
+    write(join(agentDir, "backups", MIGRATION_ID, "legacy-entry", "manifest.json"), "legacy");
+    write(join(migrationBackupRoot(agentDir, MIGRATION_ID), "new-entry", "manifest.json"), "new");
 
     await migrateLegacyPideckData(agentDir, MIGRATION_ID);
 
-    expect(readFileSync(join(providerJournalRoot(agentDir), "legacy-entry", "journal.json"), "utf8"))
-      .toBe("legacy");
-    expect(readFileSync(join(providerJournalRoot(agentDir), "new-entry", "journal.json"), "utf8"))
-      .toBe("new");
-    expect(existsSync(join(agentDir, "provider-journal"))).toBe(false);
+    expect(
+      readFileSync(join(migrationBackupRoot(agentDir, MIGRATION_ID), "legacy-entry", "manifest.json"), "utf8"),
+    ).toBe("legacy");
+    expect(
+      readFileSync(join(migrationBackupRoot(agentDir, MIGRATION_ID), "new-entry", "manifest.json"), "utf8"),
+    ).toBe("new");
+    expect(existsSync(join(agentDir, "backups", MIGRATION_ID))).toBe(false);
   });
 
   it("rejects conflicting files without overwriting either copy", async () => {
     const { agentDir } = createFixture();
-    const legacy = join(agentDir, "provider-journal", "same-entry", "journal.json");
-    const target = join(providerJournalRoot(agentDir), "same-entry", "journal.json");
+    const legacy = join(agentDir, "backups", MIGRATION_ID, "same-entry", "manifest.json");
+    const target = join(migrationBackupRoot(agentDir, MIGRATION_ID), "same-entry", "manifest.json");
     write(legacy, "legacy");
     write(target, "target");
 

@@ -602,6 +602,92 @@ export type PackageSnapshot = {
   };
 };
 
+export type MatrixUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: string;
+  effectiveRole: string;
+};
+
+export type MatrixSyncPhase = "idle" | "manifest" | "diff" | "fetch" | "index";
+
+export type MatrixSyncProgress = {
+  running: boolean;
+  runId: string | null;
+  phase: MatrixSyncPhase;
+  done: number;
+  total: number;
+  currentTitle: string | null;
+  collections: number;
+  items: number;
+  downloaded: number;
+  skipped: number;
+  conflicts: number;
+};
+
+export type MatrixStatusSnapshot = {
+  loggedIn: boolean;
+  user: MatrixUser | null;
+  rememberPassword: boolean;
+  authRequired: boolean;
+  libraryRoot: string;
+  pollIntervalMin: number;
+  withAbstract: boolean;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  sync: MatrixSyncProgress;
+};
+
+export type MatrixSettingsSnapshot = {
+  libraryRoot: string;
+  pollIntervalMin: number;
+  withAbstract: boolean;
+};
+
+export type MatrixProgressPayload = {
+  runId: string;
+  phase: Exclude<MatrixSyncPhase, "idle">;
+  done: number;
+  total: number;
+  currentTitle: string | null;
+};
+
+export const MATRIX_MIN_POLL_INTERVAL_MIN = 5;
+export const MATRIX_MAX_POLL_INTERVAL_MIN = 1440;
+export const MATRIX_DEFAULT_POLL_INTERVAL_MIN = 30;
+
+export function idleMatrixSyncProgress(): MatrixSyncProgress {
+  return {
+    running: false,
+    runId: null,
+    phase: "idle",
+    done: 0,
+    total: 0,
+    currentTitle: null,
+    collections: 0,
+    items: 0,
+    downloaded: 0,
+    skipped: 0,
+    conflicts: 0,
+  };
+}
+
+export function createIdleMatrixStatus(libraryRoot: string): MatrixStatusSnapshot {
+  return {
+    loggedIn: false,
+    user: null,
+    rememberPassword: false,
+    authRequired: false,
+    libraryRoot,
+    pollIntervalMin: MATRIX_DEFAULT_POLL_INTERVAL_MIN,
+    withAbstract: true,
+    lastSyncAt: null,
+    lastError: null,
+    sync: idleMatrixSyncProgress(),
+  };
+}
+
 export type RehydrateSnapshot = {
   /** Highest Host event sequence reflected by this composite snapshot. */
   watermark: number;
@@ -610,6 +696,7 @@ export type RehydrateSnapshot = {
   session: SessionSnapshot | null;
   tools: ToolSnapshot | null;
   packages: PackageSnapshot | null;
+  matrix: MatrixStatusSnapshot;
 };
 
 export type PackageMutationResult = {
@@ -946,6 +1033,8 @@ export type DesktopSettings = {
   interfaceDensity?: DesktopInterfaceDensity;
   /** Maximum width of the aligned conversation surfaces, in CSS pixels. */
   conversationContentWidth?: number;
+  /** Base font size for sidebars, settings, and other chrome, in CSS pixels. */
+  uiFontSize?: number;
   /** Base font size for conversation content, in CSS pixels. */
   conversationFontSize?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */

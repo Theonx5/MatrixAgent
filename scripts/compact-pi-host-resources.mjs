@@ -85,18 +85,20 @@ function createNodeModulesZip() {
   });
 }
 
-function copyHostRuntimeTree(source, destination, isRoot = false) {
+function copyHostRuntimeTree(source, destination, isRoot = false, copyAll = false) {
   mkdirSync(destination, { recursive: true });
   for (const name of readdirSync(source)) {
     if (isRoot && ["main.js", "node_modules", "host-runtime", "vendor"].includes(name)) continue;
     const from = join(source, name);
     const to = join(destination, name);
     const stats = statSync(from);
+    const nextCopyAll = copyAll || name === "resources";
     if (stats.isDirectory()) {
-      copyHostRuntimeTree(from, to);
+      copyHostRuntimeTree(from, to, false, nextCopyAll);
       continue;
     }
     if (
+      nextCopyAll ||
       (isRoot && name === "package.json") ||
       name === "host-main.js" ||
       name.endsWith(".js") ||

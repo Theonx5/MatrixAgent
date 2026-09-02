@@ -89,6 +89,7 @@
   --interface-table-padding-y: 0.75rem;
   --interface-card-gap: 1rem;
   --interface-section-gap: 2rem;
+  --ui-font-size: 14px;
   --conversation-font-size: 14px;
   --code-font-size: 12px;
   --theme-control-shadow: none;
@@ -104,7 +105,7 @@
 
   color-scheme: dark;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: var(--ui-font-size);
   line-height: 1.45;
 }
 

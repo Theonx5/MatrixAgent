@@ -15,11 +15,16 @@ import {
   MAX_EXTENSION_MESSAGE_RENDER_LINES,
 } from "./limits.js";
 import type { HostMethod } from "./methods.js";
-import type {
-  AttachmentSnapshot,
-  GitStatusSnapshot,
-  RehydrateSnapshot,
-  ToolSnapshot,
+import {
+  MATRIX_MAX_POLL_INTERVAL_MIN,
+  MATRIX_MIN_POLL_INTERVAL_MIN,
+  type AttachmentSnapshot,
+  type GitStatusSnapshot,
+  type MatrixProgressPayload,
+  type MatrixSettingsSnapshot,
+  type MatrixStatusSnapshot,
+  type RehydrateSnapshot,
+  type ToolSnapshot,
 } from "./types.js";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -58,6 +63,10 @@ function isNonNegativeNumber(value: unknown): value is number {
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function isOptionalString(value: unknown): boolean {
@@ -1143,16 +1152,126 @@ export function isPackageSnapshot(value: unknown): boolean {
   );
 }
 
+const MATRIX_SYNC_PHASES = ["idle", "manifest", "diff", "fetch", "index"] as const;
+const MATRIX_PROGRESS_PHASES = ["manifest", "diff", "fetch", "index"] as const;
+
+function isMatrixUser(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["id", "username", "displayName", "role", "effectiveRole"]) &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.username) &&
+    isString(value.displayName) &&
+    isString(value.role) &&
+    isString(value.effectiveRole)
+  );
+}
+
+function isMatrixSyncProgress(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "running",
+      "runId",
+      "phase",
+      "done",
+      "total",
+      "currentTitle",
+      "collections",
+      "items",
+      "downloaded",
+      "skipped",
+      "conflicts",
+    ]) &&
+    isBoolean(value.running) &&
+    (value.runId === null || isNonEmptyString(value.runId)) &&
+    MATRIX_SYNC_PHASES.includes(value.phase as (typeof MATRIX_SYNC_PHASES)[number]) &&
+    isSafeRevision(value.done) &&
+    isSafeRevision(value.total) &&
+    (value.currentTitle === null || isString(value.currentTitle)) &&
+    isSafeRevision(value.collections) &&
+    isSafeRevision(value.items) &&
+    isSafeRevision(value.downloaded) &&
+    isSafeRevision(value.skipped) &&
+    isSafeRevision(value.conflicts)
+  );
+}
+
+function isMatrixStatusSnapshot(value: unknown): value is MatrixStatusSnapshot {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "loggedIn",
+      "user",
+      "rememberPassword",
+      "authRequired",
+      "libraryRoot",
+      "pollIntervalMin",
+      "withAbstract",
+      "lastSyncAt",
+      "lastError",
+      "sync",
+    ]) &&
+    isBoolean(value.loggedIn) &&
+    (value.user === null || isMatrixUser(value.user)) &&
+    isBoolean(value.rememberPassword) &&
+    isBoolean(value.authRequired) &&
+    isNonEmptyString(value.libraryRoot) &&
+    typeof value.pollIntervalMin === "number" &&
+    Number.isInteger(value.pollIntervalMin) &&
+    value.pollIntervalMin >= MATRIX_MIN_POLL_INTERVAL_MIN &&
+    value.pollIntervalMin <= MATRIX_MAX_POLL_INTERVAL_MIN &&
+    isBoolean(value.withAbstract) &&
+    (value.lastSyncAt === null || isNonEmptyString(value.lastSyncAt)) &&
+    (value.lastError === null || isString(value.lastError)) &&
+    isMatrixSyncProgress(value.sync)
+  );
+}
+
+function isMatrixSettingsSnapshot(value: unknown): value is MatrixSettingsSnapshot {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["libraryRoot", "pollIntervalMin", "withAbstract"]) &&
+    isNonEmptyString(value.libraryRoot) &&
+    typeof value.pollIntervalMin === "number" &&
+    Number.isInteger(value.pollIntervalMin) &&
+    value.pollIntervalMin >= MATRIX_MIN_POLL_INTERVAL_MIN &&
+    value.pollIntervalMin <= MATRIX_MAX_POLL_INTERVAL_MIN &&
+    isBoolean(value.withAbstract)
+  );
+}
+
+function isMatrixProgressPayload(value: unknown): value is MatrixProgressPayload {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["runId", "phase", "done", "total", "currentTitle"]) &&
+    isNonEmptyString(value.runId) &&
+    MATRIX_PROGRESS_PHASES.includes(value.phase as (typeof MATRIX_PROGRESS_PHASES)[number]) &&
+    isSafeRevision(value.done) &&
+    isSafeRevision(value.total) &&
+    (value.currentTitle === null || isString(value.currentTitle))
+  );
+}
+
 function isRehydrateSnapshot(value: unknown): value is RehydrateSnapshot {
   if (
     !isPlainObject(value) ||
-    !hasExactKeys(value, ["watermark", "host", "workspace", "session", "tools", "packages"]) ||
+    !hasExactKeys(value, [
+      "watermark",
+      "host",
+      "workspace",
+      "session",
+      "tools",
+      "packages",
+      "matrix",
+    ]) ||
     !isSafeRevision(value.watermark) ||
     !isHostStatusSnapshot(value.host) ||
     !(value.workspace === null || isWorkspaceSnapshot(value.workspace)) ||
     !(value.session === null || isSessionSnapshot(value.session)) ||
     !(value.tools === null || isToolSnapshot(value.tools)) ||
-    !(value.packages === null || isPackageSnapshot(value.packages))
+    !(value.packages === null || isPackageSnapshot(value.packages)) ||
+    !isMatrixStatusSnapshot(value.matrix)
   ) {
     return false;
   }
@@ -2081,6 +2200,14 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.resources.every(isResourceRecord)
         ? null
         : "invalid package.getResources result";
+    case "matrix.getStatus":
+    case "matrix.login":
+    case "matrix.logout":
+    case "matrix.syncNow":
+    case "matrix.patchSettings":
+      return isMatrixStatusSnapshot(result) ? null : `invalid ${method} result`;
+    case "matrix.getSettings":
+      return isMatrixSettingsSnapshot(result) ? null : "invalid matrix.getSettings result";
     default:
       // Exhaustiveness guard: a new HostMethod without a result validator is a
       // compile error here — outbound validation can never be silently skipped.
@@ -2301,6 +2428,10 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         isString(payload.requestId)
         ? null
         : "invalid extensionUi.customClosed payload";
+    case "matrix.statusChanged":
+      return isMatrixStatusSnapshot(payload) ? null : "invalid matrix.statusChanged payload";
+    case "matrix.progress":
+      return isMatrixProgressPayload(payload) ? null : "invalid matrix.progress payload";
     default:
       // Exhaustiveness guard — same contract as validateMethodResultShape.
       return assertNeverShape(event, "event payload");

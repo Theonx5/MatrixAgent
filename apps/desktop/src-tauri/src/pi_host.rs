@@ -833,6 +833,12 @@ impl PiHostManager {
             .clone()
             .or_else(|| settings.last_workspace.clone())
             .map(PathBuf::from)
+            .filter(|path| {
+                let value = path.to_string_lossy();
+                let normalized = value.replace('\\', "/").to_ascii_lowercase();
+                let trimmed = normalized.trim_end_matches('/');
+                !trimmed.ends_with("/.pi/agent") && !trimmed.contains("/.pi/agent/")
+            })
     }
 
     fn settings_paths_equal(left: &str, right: &Path) -> bool {
@@ -970,7 +976,7 @@ impl PiHostManager {
                 .path()
                 .app_cache_dir()
                 .map_err(|e| format!("resolve app cache directory: {e}"))?
-                .join("pi-host"),
+                .join("host"),
         );
         let work_dir = entry
             .parent()

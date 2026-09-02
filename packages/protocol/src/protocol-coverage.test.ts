@@ -214,6 +214,12 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
   "extensionUi.customResize": { requestId: EXTENSION_REQUEST_ID, cols: 100, rows: 32 },
+  "matrix.getStatus": null,
+  "matrix.login": { username: "alice", password: "secret", rememberPassword: true },
+  "matrix.logout": null,
+  "matrix.syncNow": null,
+  "matrix.getSettings": null,
+  "matrix.patchSettings": { pollIntervalMin: 30 },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -268,6 +274,10 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.authStatus":
     case "model.list":
     case "package.reloadResources":
+    case "matrix.getStatus":
+    case "matrix.logout":
+    case "matrix.syncNow":
+    case "matrix.getSettings":
       return {}; // must be null
     case "workspace.setCurrent":
       return { path: "x" }; // missing cwd
@@ -815,6 +825,37 @@ describe("protocol coverage — events", () => {
     },
     "extensionUi.customFrame": { requestId: EXTENSION_REQUEST_ID, data: "\x1b[2J" },
     "extensionUi.customClosed": { requestId: EXTENSION_REQUEST_ID },
+    "matrix.statusChanged": {
+      loggedIn: false,
+      user: null,
+      rememberPassword: false,
+      authRequired: false,
+      libraryRoot: "/library",
+      pollIntervalMin: 30,
+      withAbstract: true,
+      lastSyncAt: null,
+      lastError: null,
+      sync: {
+        running: false,
+        runId: null,
+        phase: "idle",
+        done: 0,
+        total: 0,
+        currentTitle: null,
+        collections: 0,
+        items: 0,
+        downloaded: 0,
+        skipped: 0,
+        conflicts: 0,
+      },
+    },
+    "matrix.progress": {
+      runId: RUN_ID,
+      phase: "fetch",
+      done: 1,
+      total: 2,
+      currentTitle: "Attention",
+    },
   };
 
   for (const event of HOST_EVENT_NAMES) {

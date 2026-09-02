@@ -74,6 +74,7 @@ describe("persistDesktopSettings", () => {
     await persistDesktopSettings({
       themeFamily: "vercel",
       interfaceDensity: "compact",
+      uiFontSize: 16,
       conversationFontSize: 17,
       codeFontSize: 15,
     });
@@ -82,6 +83,7 @@ describe("persistDesktopSettings", () => {
       ...initialSettings,
       themeFamily: "vercel",
       interfaceDensity: "compact",
+      uiFontSize: 16,
       conversationFontSize: 17,
       codeFontSize: 15,
     });
@@ -126,6 +128,9 @@ describe("persistDesktopSettings", () => {
     ).rejects.toThrow("Invalid busy send behavior");
     await expect(persistDesktopSettings({ interfaceDensity: "dense" } as never)).rejects.toThrow(
       "Invalid interface density",
+    );
+    await expect(persistDesktopSettings({ uiFontSize: 11 })).rejects.toThrow(
+      "uiFontSize must be an integer between 12 and 18",
     );
     await expect(persistDesktopSettings({ conversationFontSize: 11 })).rejects.toThrow(
       "conversationFontSize must be an integer between 12 and 18",

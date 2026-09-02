@@ -4,6 +4,8 @@ import type {
   ExtensionMessageRenderSnapshot,
   ExtensionUiGroupStatus,
   HostStatusSnapshot,
+  MatrixProgressPayload,
+  MatrixStatusSnapshot,
   PackageMutationResult,
   PackageSnapshot,
   SessionSnapshot,
@@ -160,7 +162,7 @@ function resetExtensionTerminal(state: {
 }
 
 export type SettingsSection =
-  "general" | "appearance" | "shortcuts" | "providers" | "packages" | "usage" | "host";
+  "general" | "appearance" | "matrix" | "shortcuts" | "providers" | "packages" | "usage" | "host";
 
 export type AppState = EpochState & {
   page: NavPage;
@@ -172,6 +174,9 @@ export type AppState = EpochState & {
    * prompt, and when the provider config revision moves (login/logout/save).
    */
   authBlocked: { providerId: string | null } | null;
+  matrix: MatrixStatusSnapshot | null;
+  setMatrixStatus: (matrix: MatrixStatusSnapshot | null) => void;
+  applyMatrixProgress: (progress: MatrixProgressPayload) => void;
   desktopSettings: DesktopSettings | null;
   extensionUiRequest: ExtensionUiRequestState | null;
   extensionUiQueue: ExtensionUiRequestState[];
@@ -297,6 +302,7 @@ export type AppState = EpochState & {
     session?: SessionSnapshot | null;
     packages?: PackageSnapshot | null;
     tools?: ToolSnapshot | null;
+    matrix?: MatrixStatusSnapshot | null;
     /** Authoritative event watermark captured with the Host recovery snapshot. */
     lastSequence?: number;
   }) => void;
@@ -320,6 +326,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   page: "chat",
   settingsSection: null,
   authBlocked: null,
+  matrix: null,
   ...emptyEpoch(),
   desktopSettings: null,
   extensionUiRequest: null,
@@ -439,6 +446,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSettingsSection: (section) =>
     set({ page: "settings", settingsSection: section, extensionWidgetsOpen: false }),
   setAuthBlocked: (authBlocked) => set({ authBlocked }),
+  setMatrixStatus: (matrix) => set({ matrix }),
+  applyMatrixProgress: (progress) =>
+    set((state) => {
+      if (!state.matrix) return state;
+      return {
+        matrix: {
+          ...state.matrix,
+          sync: {
+            ...state.matrix.sync,
+            running: true,
+            runId: progress.runId,
+            phase: progress.phase,
+            done: progress.done,
+            total: progress.total,
+            currentTitle: progress.currentTitle,
+          },
+        },
+      };
+    }),
   setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
 
   beginHostEpoch: (host) => {
@@ -466,6 +492,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       desyncReason: undefined,
       rehydrating: false,
       providerLogin: null,
+      matrix: null,
     });
   },
 
@@ -1149,6 +1176,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       workspace,
       session,
       packages: snap.packages !== undefined ? snap.packages : current.packages,
+      matrix: snap.matrix !== undefined ? snap.matrix : current.matrix,
       tools:
         snap.tools !== undefined
           ? snap.tools

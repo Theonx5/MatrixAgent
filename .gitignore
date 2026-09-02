@@ -28,5 +28,10 @@ artifacts/
 /notes.md
 /task_plan.md
 
+# Signing secrets — never commit private keys or PFX files
+apps/desktop/src-tauri/.tauri-updater.key
+apps/desktop/src-tauri/.tauri-updater.key.pub
+*.pfx
+
 # Tauri generates this platform copy; desktop-schema.json is the tracked canonical schema
 /apps/desktop/src-tauri/gen/schemas/macOS-schema.json

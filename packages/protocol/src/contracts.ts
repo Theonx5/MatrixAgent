@@ -63,6 +63,9 @@ import type {
   GitCommitDiffSnapshot,
   GitMutationResult,
   GitCommitResult,
+  MatrixStatusSnapshot,
+  MatrixSettingsSnapshot,
+  MatrixProgressPayload,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -161,6 +164,12 @@ export type HostContextMap = {
   "extensionUi.respond": SessionTargetContext;
   "extensionUi.customInput": SessionTargetContext;
   "extensionUi.customResize": SessionTargetContext;
+  "matrix.getStatus": HostContext;
+  "matrix.login": HostContext;
+  "matrix.logout": HostContext;
+  "matrix.syncNow": HostContext;
+  "matrix.getSettings": HostContext;
+  "matrix.patchSettings": HostContext;
 };
 
 export type HostRequestParams = {
@@ -303,6 +312,16 @@ export type HostRequestParams = {
   };
   "extensionUi.customInput": { requestId: string; data: string };
   "extensionUi.customResize": { requestId: string; cols: number; rows: number };
+  "matrix.getStatus": null;
+  "matrix.login": { username: string; password: string; rememberPassword: boolean };
+  "matrix.logout": null;
+  "matrix.syncNow": null;
+  "matrix.getSettings": null;
+  "matrix.patchSettings": {
+    libraryRoot?: string;
+    pollIntervalMin?: number;
+    withAbstract?: boolean;
+  };
 };
 
 export type HostResultMap = {
@@ -457,6 +476,12 @@ export type HostResultMap = {
   "extensionUi.respond": { accepted: true };
   "extensionUi.customInput": { accepted: true };
   "extensionUi.customResize": { accepted: true };
+  "matrix.getStatus": MatrixStatusSnapshot;
+  "matrix.login": MatrixStatusSnapshot;
+  "matrix.logout": MatrixStatusSnapshot;
+  "matrix.syncNow": MatrixStatusSnapshot;
+  "matrix.getSettings": MatrixSettingsSnapshot;
+  "matrix.patchSettings": MatrixStatusSnapshot;
 };
 
 export type HostEventPayloadMap = {
@@ -546,6 +571,8 @@ export type HostEventPayloadMap = {
   };
   "extensionUi.customFrame": { requestId: string; data: string };
   "extensionUi.customClosed": { requestId: string };
+  "matrix.statusChanged": MatrixStatusSnapshot;
+  "matrix.progress": MatrixProgressPayload;
 };
 
 // Compile-time completeness: every HostMethod/HostEventName key present

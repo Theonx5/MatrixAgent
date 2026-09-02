@@ -114,11 +114,10 @@ PiDeck bundles the Pi SDK (currently `0.84.2`) and its own Node runtime, so
 it runs standalone — no global `pi` executable or Node installation required.
 The Windows build bundles Git as well.
 
-If you also use the Pi CLI, both share `~/.pi/agent` (authentication, model
-settings, and user-scope packages) and each workspace's `.pi` directory
-(sessions and history). PiDeck does not load or manage project-local packages
-from `<workspace>/.pi`. Keep the CLI version close to PiDeck's pinned SDK
-version, and avoid editing the same session from both apps at once.
+Matrix Agent uses its own data directory (`~/.MatrixAgent`) and does **not**
+share credentials, models, or packages with a Pi CLI install at `~/.pi/agent`.
+Providers and packages are configured inside the app. Project-local packages
+from `<workspace>/.pi` are not loaded.
 
 ## Build from source
 
@@ -141,10 +140,10 @@ production build and Rust tests). Native installers are built with
 
 ## Security
 
-PiDeck loads only user-scope packages from `~/.pi/agent`. Opening a
+Matrix Agent loads only user-scope packages from `~/.MatrixAgent`. Opening a
 workspace does not run `<workspace>/.pi/extensions`. Only install packages
 you trust. Provider credentials, settings, and sessions are user data under
-`~/.pi/agent` — never commit them to a repository.
+`~/.MatrixAgent` — never commit them to a repository.
 
 ## Project layout
 

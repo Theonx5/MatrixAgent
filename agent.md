@@ -50,10 +50,11 @@ cd apps/desktop/src-tauri && cargo test         # Rust 测试（需上一步先�
 1. **三端协议一致性**：新增/修改方法或事件必须同时改 `packages/protocol`、
    `packages/pi-host`、`apps/desktop`，并通过 `protocol-coverage.test.ts` 与
    `validate.test.ts`。协议文档 `docs/architecture/protocol.md` 同步更新。
-2. **安全边界**：PiDeck 只从 `~/.pi/agent` 加载用户级 Package；打开工作区
-   不得执行 `<workspace>/.pi/extensions`（`SettingsManager` 固定
-   `projectTrusted: false`）。禁止引入加载项目级 Package 的代码路径。
-3. **用户数据不入库**：`~/.pi/agent` 下的凭据、设置、会话绝不提交；
+2. **安全边界**：只从 `~/.MatrixAgent` 加载用户级 Package，不继承本机
+   `~/.pi/agent`；打开工作区不得执行 `<workspace>/.pi/extensions`
+   （`SettingsManager` 固定 `projectTrusted: false`）。禁止引入加载项目级
+   Package 的代码路径。
+3. **用户数据不入库**：`~/.MatrixAgent` 下的凭据、设置、会话绝不提交；
    `verify:fixtures` 会扫描泄漏。测试一律使用
    `packages/pi-host/src/test-helpers/temp-agent.ts` 临时目录。
 4. **SDK 补丁**：`@earendil-works/pi-coding-agent@0.84.2` 带 dist 补丁

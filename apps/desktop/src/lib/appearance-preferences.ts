@@ -5,6 +5,9 @@ import {
 } from "@pideck/protocol";
 
 const DEFAULT_INTERFACE_DENSITY: DesktopInterfaceDensity = "standard";
+const DEFAULT_UI_FONT_SIZE = 14;
+export const MIN_UI_FONT_SIZE = 12;
+export const MAX_UI_FONT_SIZE = 18;
 const DEFAULT_CONVERSATION_FONT_SIZE = 14;
 export const MIN_CONVERSATION_FONT_SIZE = 12;
 export const MAX_CONVERSATION_FONT_SIZE = 18;
@@ -24,6 +27,10 @@ export function resolveInterfaceDensity(value: unknown): DesktopInterfaceDensity
     : DEFAULT_INTERFACE_DENSITY;
 }
 
+export function resolveUiFontSize(value: unknown): number {
+  return clampInteger(value, DEFAULT_UI_FONT_SIZE, MIN_UI_FONT_SIZE, MAX_UI_FONT_SIZE);
+}
+
 export function resolveConversationFontSize(value: unknown): number {
   return clampInteger(
     value,
@@ -41,6 +48,7 @@ export function applyAppearancePreferences(settings: DesktopSettings | null | un
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.interfaceDensity = resolveInterfaceDensity(settings?.interfaceDensity);
+  root.style.setProperty("--ui-font-size", `${resolveUiFontSize(settings?.uiFontSize)}px`);
   root.style.setProperty(
     "--conversation-font-size",
     `${resolveConversationFontSize(settings?.conversationFontSize)}px`,

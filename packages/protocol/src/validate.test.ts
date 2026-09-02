@@ -647,6 +647,30 @@ describe("deep result/event validation (C3)", () => {
       updateCheck: { supported: false },
       diagnostics: [],
     },
+    matrix: {
+      loggedIn: false,
+      user: null,
+      rememberPassword: false,
+      authRequired: false,
+      libraryRoot: "C:/library",
+      pollIntervalMin: 30,
+      withAbstract: true,
+      lastSyncAt: null,
+      lastError: null,
+      sync: {
+        running: false,
+        runId: null,
+        phase: "idle",
+        done: 0,
+        total: 0,
+        currentTitle: null,
+        collections: 0,
+        items: 0,
+        downloaded: 0,
+        skipped: 0,
+        conflicts: 0,
+      },
+    },
   } as const;
 
   it("validates a consistent atomic rehydrate snapshot", () => {
@@ -681,6 +705,7 @@ describe("deep result/event validation (C3)", () => {
         session: null,
         tools: null,
         packages: null,
+        matrix: rehydrateSnapshot.matrix,
       }).ok,
     ).toBe(true);
   });

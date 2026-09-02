@@ -7,7 +7,7 @@
  *
  * On-disk format is unchanged from the SDK's own store — a flat
  * `{ [providerId]: Credential }` JSON object, two-space indented, mode 0600 —
- * so PiDeck and the Pi CLI keep sharing `~/.pi/agent`.
+ * so Matrix Agent keeps credentials under its own agent directory (`~/.MatrixAgent`).
  *
  * Two deliberate differences from the SDK implementation:
  *

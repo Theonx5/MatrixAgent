@@ -10,8 +10,10 @@ import {
 import {
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_FONT_SIZE,
+  MAX_UI_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
+  MIN_UI_FONT_SIZE,
 } from "./appearance-preferences";
 import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
@@ -49,6 +51,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "language",
   "interfaceDensity",
   "conversationContentWidth",
+  "uiFontSize",
   "conversationFontSize",
   "codeFontSize",
   "knownWorkspaces",
@@ -118,6 +121,7 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
     throw new Error("conversationContentWidth must be an integer between 560 and 4294967295");
   }
   for (const [key, min, max] of [
+    ["uiFontSize", MIN_UI_FONT_SIZE, MAX_UI_FONT_SIZE],
     ["conversationFontSize", MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE],
     ["codeFontSize", MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE],
   ] as const) {

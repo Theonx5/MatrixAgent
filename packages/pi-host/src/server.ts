@@ -1,6 +1,7 @@
 import {
   createFailureResponse,
   createHostError,
+  createIdleMatrixStatus,
   createSuccessResponse,
   parseHostRequest,
   validateEventPayload,
@@ -22,6 +23,7 @@ import { logger } from "./logger.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import { OutboundWriter } from "./outbound-queue.js";
 import { createLineReader } from "./transport.js";
+import { matrixLibraryRoot } from "./pideck-data.js";
 
 export const HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS = 8_000;
 
@@ -61,7 +63,10 @@ export type HostRuntimeDeps = {
   capabilities: HostCapabilities;
   /** Method handlers registered by controllers */
   handlers: Partial<Record<HostMethod, MethodHandler>>;
-  getRehydrateState?: () => Pick<RehydrateSnapshot, "workspace" | "session" | "tools" | "packages">;
+  getRehydrateState?: () => Pick<
+    RehydrateSnapshot,
+    "workspace" | "session" | "tools" | "packages" | "matrix"
+  >;
   /** Optional graceful cleanup before process exit */
   onShutdown?: () => Promise<void>;
 };
@@ -448,6 +453,7 @@ export class PiHostServer {
           session: null,
           tools: null,
           packages: null,
+          matrix: createIdleMatrixStatus(matrixLibraryRoot(this.deps.agentDir)),
         };
         this.outbound.enqueueBarrierResponse((watermark) => {
           const result: RehydrateSnapshot = { watermark, host, ...state };

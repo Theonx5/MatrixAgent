@@ -130,12 +130,12 @@ capability. The scoping is safe because every reload call site runs under
 
 ## PiDeck-owned agent data
 
-PiDeck keeps its Host-owned persistent data under one namespace inside the Pi
-agent directory:
+The default agent directory is `~/.MatrixAgent`, isolated from the Pi CLI.
+Host-owned extra data lives in that directory:
 
 ```text
-<agentDir>/pideck/
-  DefaultProject/
+<agentDir>/
+  library/
   migration-backups/pideck-sdk-0.80.7-to-0.82.1/
   provider-journal/
   model-backups/
@@ -150,12 +150,14 @@ of those files are read at startup, the Host adopts data from the former
 is restartable; a conflicting source and destination abort startup without
 overwriting either copy.
 
-On Desktop startup, an empty Workspace configuration creates
-`<agentDir>/pideck/DefaultProject` with `0700` permissions and persists it as
-both the recent Workspace and the first known Workspace. Any non-empty
-`defaultWorkspace`, `lastWorkspace`, or `knownWorkspaces` setting suppresses
-this fallback. `defaultWorkspace` itself is not set, so a Workspace the user
-opens later becomes the normal restart target.
+On Desktop startup, an empty Workspace configuration creates the default
+library with `0700` permissions and persists it as both the recent Workspace
+and the first known Workspace. Packaged Windows builds use
+`<installDir>/library`; other builds use `<agentDir>/library`. A leftover
+default at `<agentDir>/library` is moved to the install directory. Any other
+non-empty `defaultWorkspace`, `lastWorkspace`, or `knownWorkspaces` setting
+suppresses this fallback. `defaultWorkspace` itself is not set, so a Workspace
+the user opens later becomes the normal restart target.
 
 ## Pre-migration backup
 
@@ -263,7 +265,7 @@ All write tests **must** set:
 $env:PI_CODING_AGENT_DIR = "$env:TEMP\pideck-test-agent"
 ```
 
-Or pass `--agent-dir=<path>` to the host. Never point tests at real `~/.pi/agent` for mutations.
+Or pass `--agent-dir=<path>` to the host. Never point tests at real `~/.MatrixAgent` or `~/.pi/agent` for mutations.
 
 On macOS and other POSIX shells, use a temporary directory outside the real
 agent data, for example:

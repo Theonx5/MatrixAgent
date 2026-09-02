@@ -63,8 +63,9 @@ Implemented in `packages/protocol` + handlers in `packages/pi-host`:
 - `package.*` / `resource.setPreference` / `resource.setPreferences`
 - `piSettings.get` / `patch`
 - `extensionUi.configure` / `respond` / `customInput` / `customResize`
+- `matrix.getStatus` / `login` / `logout` / `syncNow` / `getSettings` / `patchSettings` — Paper Matrix account and unidirectional library sync. Host-scoped. See [matrix.md](./matrix.md).
 
-Desktop-only (Rust, not Host): `desktopSettings.get` / `patch`, `desktop.openPath`, and
+Desktop-only (Rust, not Host): `desktopSettings.get` / `patch`, `desktop.openPath`, `secrets_set` / `get` / `delete`, and
 `shell_terminal_create` / `write` / `resize` / `close`. The real Shell terminal uses
 `portable-pty` plus a Tauri Channel directly between Rust and xterm.js; it intentionally
 stays outside Host identity/revision epochs, so restarting Pi Host does not terminate it.
@@ -74,6 +75,7 @@ stays outside Host identity/revision epochs, so restarting Pi Host does not term
 See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
 
 - `host.ready`, `host.statusChanged`, `host.fatal`
+- `matrix.statusChanged`, `matrix.progress` (latest-wins; Host-scoped library sync)
 - `workspace.changed`
 - `session.snapshot`, `agent.event`, `agent.toolsChanged`. Background runtimes
   emit `agent.event` with that Session's identity; they do not emit

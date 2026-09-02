@@ -110,10 +110,9 @@ PiDeck 会自动检查并原地安装更新。
 PiDeck 内置 Pi SDK(当前为 `0.84.2`)和独立的 Node 运行时,开箱即用:
 不需要全局安装 `pi` 命令行或 Node;Windows 版还内置了 Git。
 
-如果你同时使用 Pi CLI,两者共享 `~/.pi/agent`(认证、模型设置、用户级
-Packages)和各工作区 `.pi` 目录(会话与历史)。PiDeck 不会加载或管理
-`<workspace>/.pi` 中的项目级 Package。建议让 CLI 版本与 PiDeck 固定的
-SDK 版本保持接近,并避免同时在两个应用中编辑同一个会话。
+Matrix Agent 使用独立数据目录 `~/.MatrixAgent`，**不会**继承电脑上 Pi CLI 的
+`~/.pi/agent`（认证、模型、Packages）。模型服务和 Packages 都要在本应用内自行配置。
+也不会加载 `<workspace>/.pi` 中的项目级 Package。
 
 ## 从源码构建
 
@@ -134,9 +133,9 @@ pnpm --filter @pideck/desktop run tauri:dev
 
 ## 安全说明
 
-PiDeck 只从 `~/.pi/agent` 加载用户级 Package。打开工作区不会执行
+Matrix Agent 只从 `~/.MatrixAgent` 加载用户级 Package。打开工作区不会执行
 `<workspace>/.pi/extensions`。请只安装可信来源的 Packages。Provider
-凭据、设置和会话属于 `~/.pi/agent` 下的用户数据，切勿提交到任何仓库。
+凭据、设置和会话属于 `~/.MatrixAgent` 下的用户数据，切勿提交到任何仓库。
 
 ## 仓库结构
 

@@ -95,6 +95,12 @@ export const HOST_METHODS = [
   "extensionUi.respond",
   "extensionUi.customInput",
   "extensionUi.customResize",
+  "matrix.getStatus",
+  "matrix.login",
+  "matrix.logout",
+  "matrix.syncNow",
+  "matrix.getSettings",
+  "matrix.patchSettings",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -158,7 +164,13 @@ export type HostOnlyMethod =
   | "provider.setBuiltinModels"
   | "session.searchAll"
   | "package.catalog"
-  | "extensionUi.configure";
+  | "extensionUi.configure"
+  | "matrix.getStatus"
+  | "matrix.login"
+  | "matrix.logout"
+  | "matrix.syncNow"
+  | "matrix.getSettings"
+  | "matrix.patchSettings";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -363,4 +375,10 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",
+  "matrix.getStatus": "host",
+  "matrix.login": "host",
+  "matrix.logout": "host",
+  "matrix.syncNow": "host",
+  "matrix.getSettings": "host",
+  "matrix.patchSettings": "host",
 };

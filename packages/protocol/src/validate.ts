@@ -321,6 +321,10 @@ export function validateRequestParams<M extends HostMethod>(
     case "model.list":
     case "package.updateAll":
     case "package.reloadResources":
+    case "matrix.getStatus":
+    case "matrix.logout":
+    case "matrix.syncNow":
+    case "matrix.getSettings":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "workspace.searchFiles":
       return exactObject(params, ["query"], ["limit"]) &&
@@ -720,6 +724,48 @@ export function validateRequestParams<M extends HostMethod>(
         params.rows <= 1000
         ? ok(params)
         : fail("invalid extensionUi.customResize params", { method });
+    case "matrix.login":
+      return exactObject(params, ["username", "password", "rememberPassword"]) &&
+        isNonEmptyString(params.username) &&
+        params.username.length <= 200 &&
+        !params.username.includes("\u0000") &&
+        isNonEmptyString(params.password) &&
+        params.password.length <= 200 &&
+        !params.password.includes("\u0000") &&
+        typeof params.rememberPassword === "boolean"
+        ? ok(params)
+        : fail("invalid matrix.login params", { method });
+    case "matrix.patchSettings": {
+      if (
+        !exactObject(params, [], ["libraryRoot", "pollIntervalMin", "withAbstract"]) ||
+        Object.keys(params).length === 0
+      ) {
+        return fail("invalid matrix.patchSettings params", { method });
+      }
+      if (
+        params.libraryRoot !== undefined &&
+        (!isNonEmptyString(params.libraryRoot) ||
+          params.libraryRoot.length > 4096 ||
+          params.libraryRoot.includes("\u0000"))
+      ) {
+        return fail("invalid matrix.patchSettings libraryRoot", { method });
+      }
+      if (
+        params.pollIntervalMin !== undefined &&
+        !(
+          typeof params.pollIntervalMin === "number" &&
+          Number.isInteger(params.pollIntervalMin) &&
+          params.pollIntervalMin >= 5 &&
+          params.pollIntervalMin <= 1440
+        )
+      ) {
+        return fail("invalid matrix.patchSettings pollIntervalMin", { method });
+      }
+      if (params.withAbstract !== undefined && typeof params.withAbstract !== "boolean") {
+        return fail("invalid matrix.patchSettings withAbstract", { method });
+      }
+      return ok(params);
+    }
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

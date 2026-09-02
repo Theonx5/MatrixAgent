@@ -9,13 +9,13 @@ incremental writes under a file lock), and PiDeck's Settings → General →
 
 | Scope | Path | Notes |
 |---|---|---|
-| Global | `<agentDir>/settings.json` | `<agentDir>` defaults to `~/.pi/agent`, overridable via `PI_CODING_AGENT_DIR` |
+| Global | `<agentDir>/settings.json` | `<agentDir>` defaults to `~/.MatrixAgent` (Desktop always passes this; standalone Host falls back the same way) |
 | Project | `<workspace>/.pi/settings.json` | Only loaded when the project is trusted |
 
 Project settings deep-merge over global settings (project wins). PiDeck's More
 settings block opens the **global** file. PiDeck hardcodes
 `projectTrusted: false`, so a project file is not merged. Compaction and other
-overrides live only in `~/.pi/agent/settings.json`.
+overrides live only in `~/.MatrixAgent/settings.json`.
 
 ## What takes effect in PiDeck
 

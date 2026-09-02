@@ -117,6 +117,10 @@ function coalesceKeyFor(
       return "agent.queueChanged";
     case "host.statusChanged":
       return "host.statusChanged";
+    case "matrix.statusChanged":
+      return "matrix.statusChanged";
+    case "matrix.progress":
+      return "matrix.progress";
     default:
       return null;
   }
