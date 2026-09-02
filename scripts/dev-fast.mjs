@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tauriDir = join(root, "apps", "desktop", "src-tauri");
-const desktopExe = join(tauriDir, "target", "debug", "pideck.exe");
+const desktopExe = join(tauriDir, "target", "debug", "PaperMatrix.exe");
 const devUrl = "http://localhost:1420/";
 const hostSrc = join(root, "packages", "pi-host", "src");
 const hostDist = join(root, "packages", "pi-host", "dist");

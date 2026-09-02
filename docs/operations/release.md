@@ -128,7 +128,7 @@ Two signatures are involved:
    Windows installs with NSIS quiet mode. macOS in-place replace is disabled
    until the build is Developer ID signed.
 2. **Windows Authenticode.** `pnpm package:release` and `pnpm sign:windows`
-   sign `pideck.exe` and the NSIS installer. Set
+   sign `PaperMatrix.exe` and the NSIS installer. Set
    `PIDECK_WINDOWS_CERT_THUMBPRINT` to a purchased OV/EV certificate for a
    public release. Without it, a local `CN=PaperMatrix` self-signed cert is
    created in `CurrentUser\My` — enough for `signtool verify`, not enough to

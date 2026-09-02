@@ -297,7 +297,7 @@ for (const stalePath of [
   join(bundleRoot, "resources", "pi-host"),
   join(bundleRoot, "resources", "node"),
   join(bundleRoot, "resources", "git"),
-  join(bundleRoot, "pideck.exe"),
+  join(bundleRoot, "PaperMatrix.exe"),
   join(bundleRoot, "bundle", "nsis"),
 ]) {
   rmSync(stalePath, { recursive: true, force: true });
@@ -332,7 +332,7 @@ const tauriStatus = timedStage("build Tauri NSIS candidate", () => {
   return r.status ?? 1;
 });
 
-const desktopExecutable = join(bundleRoot, "pideck.exe");
+const desktopExecutable = join(bundleRoot, "PaperMatrix.exe");
 const installer = timedStage("locate primary bundle output", () =>
   findPrimaryInstaller(bundleRoot),
 );

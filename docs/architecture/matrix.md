@@ -47,8 +47,10 @@ Pi CLI project. The Host child does not inherit `PI_CODING_AGENT_SESSION_DIR`,
 `PI_CODING_AGENT`, or `PI_PACKAGE_DIR`. The default library root is
 `<agentDir>/library` (`~/.MatrixAgent/library`). A previous Windows default at
 `<installDir>/library` is relocated there so uninstalling the app does not
-delete papers. Uninstall never removes `%USERPROFILE%\.pi` (Pi CLI). Checking
-Delete application data removes `%USERPROFILE%\.MatrixAgent` plus the Tauri
+delete papers. The Windows app identity is `online.papermatrix.matrix-agent` /
+`PaperMatrix.exe`. Uninstall never removes `%USERPROFILE%\.pi`, leftover
+`com.skitre.pideck` AppData, or other PiDeck-named files. Checking Delete
+application data removes `%USERPROFILE%\.MatrixAgent` plus this app's Tauri
 bundle folders under AppData. First-run Desktop workspaces use the Matrix
 library. Custom `knownWorkspaces` that are not under `~/.pi/agent` are left
 alone when the agent dir is already isolated.

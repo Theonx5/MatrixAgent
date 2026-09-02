@@ -19,7 +19,8 @@ PaperMatrix / Matrix Agent 是基于 [Pi Coding Agent](https://www.npmjs.com/pac
 | `apps/desktop` | React 19 + Vite + Tauri 2 (Rust) | 界面与桌面宿主 |
 
 默认用户数据在 `~/.MatrixAgent`。默认文献库是 `~/.MatrixAgent/library`。
-卸载应用不会删除 Pi CLI 的 `~/.pi`。不要指向 `~/.pi/agent`。
+Windows 安装身份是 `online.papermatrix.matrix-agent` / `PaperMatrix.exe`。
+卸载不会删除 Pi CLI 的 `~/.pi`，也不会删除 pideck 命名的文件。不要指向 `~/.pi/agent`。
 
 ## 2. 本机环境
 

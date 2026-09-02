@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
+const LEGACY_APP_IDENTIFIER: &str = "com.skitre.pideck";
 const DEFAULT_PROJECT_DIR_NAME: &str = "library";
 const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 668;
 const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
@@ -194,7 +195,10 @@ impl DesktopSettingsStore {
                 }
                 path
             }
-            None => app.path().app_config_dir().map_err(|e| e.to_string())?,
+            None => {
+                adopt_legacy_app_identity_dirs(app)?;
+                app.path().app_config_dir().map_err(|e| e.to_string())?
+            }
         };
         Self::load_from_dir(&dir)
     }
@@ -467,6 +471,47 @@ impl DesktopSettingsStore {
         }
         default_matrix_agent_dir()
     }
+}
+
+fn adopt_legacy_app_identity_dirs(app: &AppHandle) -> Result<(), String> {
+    for current in [
+        app.path().app_config_dir().ok(),
+        app.path().app_data_dir().ok(),
+        app.path().app_local_data_dir().ok(),
+        app.path().app_cache_dir().ok(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        adopt_legacy_identifier_dir(&current, LEGACY_APP_IDENTIFIER)?;
+    }
+    Ok(())
+}
+
+fn adopt_legacy_identifier_dir(current: &Path, legacy_identifier: &str) -> Result<(), String> {
+    let Some(parent) = current.parent() else {
+        return Ok(());
+    };
+    let Some(current_name) = current.file_name().and_then(|name| name.to_str()) else {
+        return Ok(());
+    };
+    if current_name.eq_ignore_ascii_case(legacy_identifier) {
+        return Ok(());
+    }
+    let legacy = parent.join(legacy_identifier);
+    if same_path(&legacy, current) || !legacy.exists() {
+        return Ok(());
+    }
+    if current.exists() && !directory_is_empty(current) {
+        return Ok(());
+    }
+    copy_dir_all(&legacy, current)
+}
+
+fn directory_is_empty(path: &Path) -> bool {
+    fs::read_dir(path)
+        .map(|mut entries| entries.next().is_none())
+        .unwrap_or(true)
 }
 
 fn default_matrix_agent_dir() -> PathBuf {
@@ -1165,6 +1210,23 @@ mod tests {
             agent.join("library")
         );
         assert_eq!(default_library_dir_for(&agent, None), agent.join("library"));
+    }
+
+    #[test]
+    fn copies_legacy_pideck_app_data_without_deleting_it() {
+        let dir = test_dir("adopt-legacy-identity");
+        let legacy = dir.join("com.skitre.pideck");
+        let current = dir.join("online.papermatrix.matrix-agent");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("desktop-settings.json"), "{\"theme\":\"dark\"}").unwrap();
+
+        adopt_legacy_identifier_dir(&current, "com.skitre.pideck").unwrap();
+        assert_eq!(
+            fs::read_to_string(current.join("desktop-settings.json")).unwrap(),
+            "{\"theme\":\"dark\"}"
+        );
+        assert!(legacy.join("desktop-settings.json").exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -1,13 +1,19 @@
 [package]
 name = "pideck"
 version = "0.2.3"
-description = "PiDeck"
-authors = ["PiDeck contributors"]
+description = "PaperMatrix"
+authors = ["PaperMatrix"]
 edition = "2021"
+default-run = "PaperMatrix"
+autobins = false
 
 [lib]
 name = "pideck_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "PaperMatrix"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
