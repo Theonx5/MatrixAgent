@@ -23,12 +23,12 @@ test("Windows app identity is PaperMatrix, not pideck", () => {
 
   const hooks = readFileSync(join(root, "apps/desktop/src-tauri/windows/hooks.nsh"), "utf8");
   assert.match(hooks, /PaperMatrix\.exe/);
-  assert.doesNotMatch(hooks, /RMDir.*\\.(?:pi|pideck)/i);
-  assert.doesNotMatch(hooks, /com\.skitre\.pideck/i);
+  assert.doesNotMatch(hooks, /RMDir \/r "\$PROFILE\\\.pi"/i);
+  assert.doesNotMatch(hooks, /RMDir \/r "\$LOCALAPPDATA\\com\.skitre\.pideck"/i);
   const uninstall = hooks.split("!macro NSIS_HOOK_PREUNINSTALL")[1] ?? "";
   assert.match(uninstall, /PaperMatrix\.exe/);
   assert.doesNotMatch(uninstall, /pideck\.exe/i);
   const postUninstall = hooks.split("!macro NSIS_HOOK_POSTUNINSTALL")[1] ?? "";
   assert.match(postUninstall, /\\.MatrixAgent/);
-  assert.doesNotMatch(postUninstall, /pideck/i);
+  assert.match(postUninstall, /online\.papermatrix\.matrix-agent\\host/);
 });

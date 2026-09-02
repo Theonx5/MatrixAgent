@@ -29,14 +29,21 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  ; Never delete Pi CLI data or other products' AppData. Tauri only removes
-  ; this app's bundle id (online.papermatrix.matrix-agent). Matrix Agent user
-  ; files live in %USERPROFILE%\.MatrixAgent.
-  ${If} $DeleteAppDataCheckboxState = 1
-  ${AndIf} $UpdateMode <> 1
+  ; Runtime cache is reconstructed from node_modules.tar.gz; always remove it.
+  ; Never delete Pi CLI data. User files in %USERPROFILE%\.MatrixAgent stay
+  ; unless the user checks Delete application data.
+  ${If} $UpdateMode <> 1
     SetShellVarContext current
-    IfFileExists "$PROFILE\.MatrixAgent" 0 skip_matrix_agent_data
-      RMDir /r "$PROFILE\.MatrixAgent"
-    skip_matrix_agent_data:
+    IfFileExists "$LOCALAPPDATA\online.papermatrix.matrix-agent\host" 0 skip_host_cache
+      RMDir /r "$LOCALAPPDATA\online.papermatrix.matrix-agent\host"
+    skip_host_cache:
+    IfFileExists "$LOCALAPPDATA\com.skitre.pideck\host" 0 skip_legacy_host_cache
+      RMDir /r "$LOCALAPPDATA\com.skitre.pideck\host"
+    skip_legacy_host_cache:
+    ${If} $DeleteAppDataCheckboxState = 1
+      IfFileExists "$PROFILE\.MatrixAgent" 0 skip_matrix_agent_data
+        RMDir /r "$PROFILE\.MatrixAgent"
+      skip_matrix_agent_data:
+    ${EndIf}
   ${EndIf}
 !macroend
