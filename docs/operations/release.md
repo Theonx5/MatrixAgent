@@ -127,12 +127,18 @@ Two signatures are involved:
    Losing the private key breaks update verification for installed apps.
    Windows installs with NSIS quiet mode. macOS in-place replace is disabled
    until the build is Developer ID signed.
-2. **Windows Authenticode.** `pnpm package:release` and `pnpm sign:windows`
-   sign `PaperMatrix.exe` and the NSIS installer. Set
-   `PIDECK_WINDOWS_CERT_THUMBPRINT` to a purchased OV/EV certificate for a
-   public release. Without it, a local `CN=PaperMatrix` self-signed cert is
-   created in `CurrentUser\My` — enough for `signtool verify`, not enough to
-   silence SmartScreen.
+2. **Windows Authenticode.** This is what removes "Unknown publisher" and
+   SmartScreen. It is **not** configured yet unless GitHub has a purchased
+   certificate. Without it, CI signs with a throwaway `CN=PaperMatrix`
+   self-signed cert: `signtool` succeeds, Windows still shows 未知发布者 / 仍要运行.
+   Buy an OV or EV **code signing** certificate (or Azure Trusted Signing),
+   export the PFX, and add these repository secrets:
+   - `WINDOWS_CERTIFICATE` — base64 of the `.pfx`
+   - `WINDOWS_CERTIFICATE_PASSWORD` — PFX password
+   Optional: `PIDECK_WINDOWS_CERT_THUMBPRINT` if the cert is already in the
+   build machine store. EV or Azure Trusted Signing clears SmartScreen quickly;
+   OV still warns until the publisher builds reputation. Then re-run
+   **Release desktop installers** on the tag.
 
 ```powershell
 pnpm sign:windows

@@ -54,9 +54,67 @@ function findSignTool() {
   return null;
 }
 
+function readThumbprint(output, errorMessage) {
+  const thumbprint = (output || "").trim().split(/\r?\n/u).filter(Boolean).at(-1);
+  if (!thumbprint || !/^[0-9A-Fa-f]{40}$/u.test(thumbprint)) {
+    throw new Error(errorMessage);
+  }
+  return thumbprint;
+}
+
+function importWindowsPfx(certificateBase64, password) {
+  const script = [
+    `$pfxPath = Join-Path $env:TEMP ("papermatrix-codesign-" + [guid]::NewGuid().ToString() + ".pfx")`,
+    `try {`,
+    `  [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String(${JSON.stringify(certificateBase64)}))`,
+    `  $secure = ConvertTo-SecureString ${JSON.stringify(password ?? "")} -AsPlainText -Force`,
+    `  $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\\CurrentUser\\My -Password $secure -Exportable`,
+    `  if (-not $cert -or -not $cert.HasPrivateKey) { throw 'PFX import did not yield a private key' }`,
+    `  $cert.Thumbprint`,
+    `} finally {`,
+    `  if (Test-Path $pfxPath) { Remove-Item -Force $pfxPath }`,
+    `}`,
+  ].join("; ");
+  const result = spawnCapture("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    script,
+  ]);
+  if (result.status !== 0) {
+    throw new Error(
+      `Could not import WINDOWS_CERTIFICATE PFX: ${
+        (result.stderr || result.stdout || `exit ${result.status}`).trim()
+      }`,
+    );
+  }
+  const thumbprint = readThumbprint(
+    result.stdout,
+    `WINDOWS_CERTIFICATE PFX import did not return a thumbprint: ${
+      (result.stderr || result.stdout || "").trim()
+    }`,
+  );
+  return { thumbprint, created: false, subject: thumbprint, kind: "pfx" };
+}
+
 export function ensureWindowsCodeSigningCert() {
   const fromEnv = process.env.PIDECK_WINDOWS_CERT_THUMBPRINT?.trim();
-  if (fromEnv) return { thumbprint: fromEnv, created: false, subject: fromEnv };
+  if (fromEnv) {
+    if (!/^[0-9A-Fa-f]{40}$/u.test(fromEnv)) {
+      throw new Error("PIDECK_WINDOWS_CERT_THUMBPRINT must be a 40-character SHA-1 thumbprint");
+    }
+    return { thumbprint: fromEnv, created: false, subject: fromEnv, kind: "provided" };
+  }
+  const certificate = process.env.WINDOWS_CERTIFICATE?.trim();
+  const password = process.env.WINDOWS_CERTIFICATE_PASSWORD;
+  if (certificate || (typeof password === "string" && password.length > 0)) {
+    if (!certificate || password == null) {
+      throw new Error(
+        "WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD must be configured together",
+      );
+    }
+    return importWindowsPfx(certificate, password);
+  }
   const script = [
     `$existing = Get-ChildItem Cert:\\CurrentUser\\My | Where-Object {`,
     `  $_.HasPrivateKey -and $_.Subject -eq '${DEV_CERT_SUBJECT}' -and $_.NotAfter -gt (Get-Date)`,
@@ -72,15 +130,20 @@ export function ensureWindowsCodeSigningCert() {
     "-Command",
     script,
   ]);
-  const thumbprint = (result.stdout || "").trim().split(/\r?\n/u).filter(Boolean).at(-1);
-  if (result.status !== 0 || !thumbprint || !/^[0-9A-Fa-f]{40}$/u.test(thumbprint)) {
+  if (result.status !== 0) {
     throw new Error(
       `Could not create or find a PaperMatrix code-signing certificate: ${
         result.stderr || result.stdout || `exit ${result.status}`
       }`,
     );
   }
-  return { thumbprint, created: true, subject: DEV_CERT_SUBJECT };
+  const thumbprint = readThumbprint(
+    result.stdout,
+    `Could not create or find a PaperMatrix code-signing certificate: ${
+      result.stderr || result.stdout || `exit ${result.status}`
+    }`,
+  );
+  return { thumbprint, created: true, subject: DEV_CERT_SUBJECT, kind: "self-signed" };
 }
 
 export function signWindowsPe(filePath, thumbprint) {

@@ -341,6 +341,19 @@ if (installer && existsSync(installer)) {
   try {
     authenticode = timedStage("Authenticode-sign installer", () => {
       const cert = ensureWindowsCodeSigningCert();
+      if (cert.kind === "self-signed") {
+        console.warn(
+          "[package:release] Authenticode is self-signed. Windows will show Unknown publisher / SmartScreen.",
+        );
+        console.warn(
+          "[package:release] Add GitHub secrets WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD (OV/EV code-signing PFX).",
+        );
+        if (process.env.PIDECK_REQUIRE_TRUSTED_WINDOWS_CERT === "1") {
+          throw new Error(
+            "PIDECK_REQUIRE_TRUSTED_WINDOWS_CERT=1 forbids the self-signed PaperMatrix certificate",
+          );
+        }
+      }
       const signed = [installer, desktopExecutable]
         .filter((path) => existsSync(path))
         .map((path) => {
@@ -349,9 +362,22 @@ if (installer && existsSync(installer)) {
           if (!verify.ok) {
             throw new Error(`Authenticode verify failed for ${path}: ${verify.output}`);
           }
-          return { path, ...result, verify: verify.ok, thumbprint: cert.thumbprint };
+          return {
+            path,
+            ...result,
+            verify: verify.ok,
+            trusted: verify.trusted,
+            status: verify.status,
+            kind: cert.kind,
+            thumbprint: cert.thumbprint,
+          };
         });
-      return { thumbprint: cert.thumbprint, files: signed };
+      return {
+        thumbprint: cert.thumbprint,
+        kind: cert.kind,
+        trustedPublisher: signed.every((file) => file.trusted),
+        files: signed,
+      };
     });
   } catch (error) {
     console.warn(

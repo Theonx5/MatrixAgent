@@ -132,6 +132,9 @@ jobs:
       - name: Package from the verified source commit
         env:
           PIDECK_VERIFIED_SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          PIDECK_WINDOWS_CERT_THUMBPRINT: ${{ secrets.PIDECK_WINDOWS_CERT_THUMBPRINT }}
         run: pnpm package:release
       - name: Confirm package manifest source commit
         shell: bash
