@@ -41,6 +41,12 @@
       RMDir /r "$LOCALAPPDATA\com.skitre.pideck\host"
     skip_legacy_host_cache:
     ${If} $DeleteAppDataCheckboxState = 1
+      ; Agent data now lives next to the installed binary; wipe it too when
+      ; the user opts into full data removal. The legacy home-directory layout
+      ; is cleaned as well for pre-0.2.6 installs.
+      IfFileExists "$INSTDIR\agent" 0 skip_instdir_agent_data
+        RMDir /r "$INSTDIR\agent"
+      skip_instdir_agent_data:
       IfFileExists "$PROFILE\.MatrixAgent" 0 skip_matrix_agent_data
         RMDir /r "$PROFILE\.MatrixAgent"
       skip_matrix_agent_data:

@@ -219,7 +219,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "matrix.logout": null,
   "matrix.syncNow": null,
   "matrix.getSettings": null,
-  "matrix.patchSettings": { pollIntervalMin: 30 },
+  "matrix.patchSettings": { pollIntervalMin: 180 },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -831,7 +831,7 @@ describe("protocol coverage — events", () => {
       rememberPassword: false,
       authRequired: false,
       libraryRoot: "/library",
-      pollIntervalMin: 30,
+      pollIntervalMin: 180,
       withAbstract: true,
       lastSyncAt: null,
       lastError: null,

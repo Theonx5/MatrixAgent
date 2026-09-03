@@ -828,7 +828,7 @@ export const en = {
     "Synced Markdown papers are written here. Packaged Windows installs default to a library folder next to the app.",
   matrixBrowse: "Browse",
   matrixPollInterval: "Sync interval (minutes)",
-  matrixPollIntervalDesc: "Minimum 5 minutes. Default 30.",
+  matrixPollIntervalDesc: "Minimum 1 hour (60 minutes). Default 3 hours.",
   matrixWithAbstract: "Include abstracts",
   matrixWithAbstractDesc: "Fetch abstracts with the manifest. Uses more bandwidth.",
   matrixNotLoggedIn: "Log in to sync your Paper Matrix library.",

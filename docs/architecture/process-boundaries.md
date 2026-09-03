@@ -18,7 +18,8 @@
 ## Host environment sandbox
 
 Matrix Agent bundles the Pi SDK and resolves all Pi state under its own agent
-directory (`~/.MatrixAgent` by default). An external Pi CLI installation on the
+directory (the install-directory `agent\` folder by default on Windows
+releases, `~/.MatrixAgent` in development). An external Pi CLI installation on the
 same machine (`~/.pi/agent`) must not leak in through either side of the spawn
 boundary:
 

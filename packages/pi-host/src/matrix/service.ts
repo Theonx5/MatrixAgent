@@ -71,7 +71,7 @@ export class MatrixService {
     this.store = new MatrixStore(options.agentDir);
     this.settings = {
       libraryRoot: matrixLibraryRoot(options.agentDir),
-      pollIntervalMin: 30,
+      pollIntervalMin: MATRIX_DEFAULT_POLL_INTERVAL_MIN,
       withAbstract: true,
     };
     this.sync = createIdleMatrixStatus(this.settings.libraryRoot).sync;

@@ -132,7 +132,8 @@ capability. The scoping is safe because every reload call site runs under
 
 ## PiDeck-owned agent data
 
-The default agent directory is `~/.MatrixAgent`, isolated from the Pi CLI.
+The default agent directory is `~/.MatrixAgent` in development builds
+(release installs use `<installDir>gent`), isolated from the Pi CLI.
 Desktop never shows a toast for leftover `~/.pi/agent` settings; it rewrites
 them silently and does not inherit that CLI's last project as the default
 Workspace. Host spawn clears `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT`,

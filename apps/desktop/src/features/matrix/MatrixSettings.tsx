@@ -19,7 +19,7 @@ export function MatrixSettings() {
   const [password, setPassword] = useState("");
   const [rememberPassword, setRememberPassword] = useState(matrix?.rememberPassword ?? false);
   const [busy, setBusy] = useState<"login" | "logout" | "sync" | "settings" | null>(null);
-  const [pollText, setPollText] = useState(String(matrix?.pollIntervalMin ?? 30));
+  const [pollText, setPollText] = useState(String(matrix?.pollIntervalMin ?? 180));
 
   async function run<T>(kind: typeof busy, task: () => Promise<T>): Promise<T | undefined> {
     if (!host) return undefined;
@@ -275,8 +275,8 @@ export function MatrixSettings() {
                 onChange={(event) => setPollText(event.target.value)}
                 onBlur={() => {
                   const value = Number(pollText);
-                  if (!Number.isInteger(value) || value < 5 || value > 1440) {
-                    setPollText(String(matrix?.pollIntervalMin ?? 30));
+                  if (!Number.isInteger(value) || value < 60 || value > 1440) {
+                    setPollText(String(matrix?.pollIntervalMin ?? 180));
                     return;
                   }
                   if (value !== matrix?.pollIntervalMin)

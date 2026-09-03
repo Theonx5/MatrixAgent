@@ -653,7 +653,7 @@ describe("deep result/event validation (C3)", () => {
       rememberPassword: false,
       authRequired: false,
       libraryRoot: "C:/library",
-      pollIntervalMin: 30,
+      pollIntervalMin: 180,
       withAbstract: true,
       lastSyncAt: null,
       lastError: null,

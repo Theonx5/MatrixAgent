@@ -653,9 +653,9 @@ export type MatrixProgressPayload = {
   currentTitle: string | null;
 };
 
-export const MATRIX_MIN_POLL_INTERVAL_MIN = 5;
+export const MATRIX_MIN_POLL_INTERVAL_MIN = 60;
 export const MATRIX_MAX_POLL_INTERVAL_MIN = 1440;
-export const MATRIX_DEFAULT_POLL_INTERVAL_MIN = 30;
+export const MATRIX_DEFAULT_POLL_INTERVAL_MIN = 180;
 
 export function idleMatrixSyncProgress(): MatrixSyncProgress {
   return {

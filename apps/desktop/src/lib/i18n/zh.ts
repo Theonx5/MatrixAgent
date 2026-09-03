@@ -797,7 +797,7 @@ export const zh: Record<MessageKey, string> = {
     "同步下来的 Markdown 论文会写到这里。Windows 安装版默认在安装目录下的 library 文件夹。",
   matrixBrowse: "浏览",
   matrixPollInterval: "同步间隔（分钟）",
-  matrixPollIntervalDesc: "最少 5 分钟，默认 30 分钟。",
+  matrixPollIntervalDesc: "最短 1 小时（60 分钟），默认 3 小时。",
   matrixWithAbstract: "包含摘要",
   matrixWithAbstractDesc: "随清单拉取摘要，会多用一些流量。",
   matrixNotLoggedIn: "登录后才能同步 Paper Matrix 文献库。",

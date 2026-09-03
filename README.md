@@ -114,7 +114,7 @@ PiDeck bundles the Pi SDK (currently `0.84.4`) and its own Node runtime, so
 it runs standalone — no global `pi` executable or Node installation required.
 The Windows build bundles Git as well.
 
-Matrix Agent uses its own data directory (`~/.MatrixAgent`) and does **not**
+Matrix Agent keeps its data next to the installed app (`<installDir>gent` on Windows; `~/.MatrixAgent` in development) and does **not**
 share credentials, models, or packages with a Pi CLI install at `~/.pi/agent`.
 Providers and packages are configured inside the app. Project-local packages
 from `<workspace>/.pi` are not loaded.

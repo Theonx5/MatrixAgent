@@ -369,6 +369,7 @@ impl DesktopSettingsStore {
 
     pub fn ensure_default_project_workspace(&mut self) -> Result<Option<PathBuf>, String> {
         let agent_dir = self.resolved_agent_dir();
+        self.migrate_legacy_home_agent_dir(&agent_dir)?;
         let project_dir = default_library_dir(&agent_dir);
         let install_library = packaged_library_dir();
         let current = first_configured_workspace(&self.settings);
@@ -471,6 +472,30 @@ impl DesktopSettingsStore {
         }
         default_matrix_agent_dir()
     }
+
+    fn migrate_legacy_home_agent_dir(&mut self, agent_dir: &Path) -> Result<(), String> {
+        let Some(install) = packaged_install_dir() else {
+            return Ok(());
+        };
+        let default_target = default_matrix_agent_dir_for(Some(&install), None);
+        if !same_path(agent_dir, &default_target) {
+            // A custom agent dir is in use — never relocate it.
+            return Ok(());
+        }
+        if !install_agent_dir_writable(&install) {
+            return Ok(());
+        }
+        let legacy = legacy_home_agent_dir();
+        let effective = agent_dir.to_path_buf();
+        let mut next = self.settings.clone();
+        let migrated = migrate_legacy_home_agent_dir_to(&mut next, &effective, &legacy, &|next| {
+            self.write_settings(next)
+        })?;
+        if migrated {
+            self.settings = next;
+        }
+        Ok(())
+    }
 }
 
 fn adopt_legacy_app_identity_dirs(app: &AppHandle) -> Result<(), String> {
@@ -515,9 +540,83 @@ fn directory_is_empty(path: &Path) -> bool {
 }
 
 fn default_matrix_agent_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".MatrixAgent")
+    if let Some(install) = packaged_install_dir() {
+        let candidate = default_matrix_agent_dir_for(Some(&install), None);
+        if install_agent_dir_writable(&install) {
+            return candidate;
+        }
+    }
+    default_matrix_agent_dir_for(None, None)
+}
+
+const AGENT_DIR_NAME: &str = "agent";
+
+/// Pure default-agent-dir policy: prefer a directory next to the installed
+/// executable so uninstalling or relocating the app folder takes the data with
+/// it; fall back to the legacy home-directory layout in dev builds, tests, or
+/// when the install directory is not writable.
+fn default_matrix_agent_dir_for(install_dir: Option<&Path>, home: Option<&Path>) -> PathBuf {
+    match install_dir {
+        Some(dir) => dir.join(AGENT_DIR_NAME),
+        None => home
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+            .join(".MatrixAgent"),
+    }
+}
+
+/// The agent directory must be creatable and writable before the Host is
+/// pointed at it; a per-machine install under a read-only directory falls back
+/// to the home-directory layout instead of failing startup.
+fn install_agent_dir_writable(install_dir: &Path) -> bool {
+    if fs::create_dir_all(install_dir).is_err() {
+        return false;
+    }
+    let probe = install_dir.join(format!(".matrix-agent-write-probe-{}", std::process::id()));
+    let written = File::create(&probe).is_ok_and(|mut file| file.write_all(b"ok").is_ok());
+    if written {
+        drop(fs::remove_file(&probe));
+    } else {
+        drop(fs::remove_file(&probe));
+        return false;
+    }
+    written
+}
+
+fn legacy_home_agent_dir() -> PathBuf {
+    default_matrix_agent_dir_for(None, None)
+}
+
+/// One-time adoption: move a legacy `~/.MatrixAgent` into the install-directory
+/// agent dir. Runs before the Host is spawned; refuses to clobber a target that
+/// already holds data, and rewrites recorded workspaces so the library follows
+/// the move.
+fn migrate_legacy_home_agent_dir_to(
+    settings: &mut DesktopSettings,
+    effective: &Path,
+    legacy: &Path,
+    write: &dyn Fn(&DesktopSettings) -> Result<(), String>,
+) -> Result<bool, String> {
+    if same_path(effective, legacy) || !legacy.exists() {
+        return Ok(false);
+    }
+    if effective.exists() {
+        if !directory_is_empty(effective) {
+            // Already adopted (or genuinely in use) — keep the target.
+            return Ok(false);
+        }
+        fs::remove_dir(effective)
+            .map_err(|error| format!("clear empty agent dir {}: {error}", effective.display()))?;
+    }
+    relocate_directory(legacy, effective)?;
+    // The moved matrix-settings.json still points at the legacy library, and
+    // recorded workspaces still name it; retarget both onto the new layout.
+    let legacy_library = legacy.join(DEFAULT_PROJECT_DIR_NAME);
+    let library = effective.join(DEFAULT_PROJECT_DIR_NAME);
+    seed_matrix_library_root(effective, &library, Some(&legacy_library))?;
+    rewrite_workspace_path(settings, &legacy_library, &library);
+    write(settings)?;
+    Ok(true)
 }
 
 fn packaged_install_dir() -> Option<PathBuf> {
@@ -696,7 +795,7 @@ fn seed_matrix_library_root(
         serde_json::from_str::<serde_json::Value>(&raw).unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({
-            "pollIntervalMin": 30,
+            "pollIntervalMin": 180,
             "withAbstract": true
         })
     };
@@ -717,7 +816,7 @@ fn seed_matrix_library_root(
     );
     object
         .entry("pollIntervalMin".to_string())
-        .or_insert(serde_json::json!(30));
+        .or_insert(serde_json::json!(180));
     object
         .entry("withAbstract".to_string())
         .or_insert(serde_json::json!(true));
@@ -1210,6 +1309,87 @@ mod tests {
             agent.join("library")
         );
         assert_eq!(default_library_dir_for(&agent, None), agent.join("library"));
+    }
+
+    #[test]
+    fn default_agent_dir_prefers_the_install_directory() {
+        let install = PathBuf::from(r"D:\Apps\PaperMatrix");
+        let home = PathBuf::from(r"C:\Users\me");
+        assert_eq!(
+            default_matrix_agent_dir_for(Some(&install), Some(&home)),
+            install.join("agent")
+        );
+        assert_eq!(
+            default_matrix_agent_dir_for(None, Some(&home)),
+            home.join(".MatrixAgent")
+        );
+    }
+
+    #[test]
+    fn adopts_a_legacy_home_agent_dir_into_the_install_directory() {
+        let dir = test_dir("migrate-agent-dir");
+        let legacy = dir.join("home").join(".MatrixAgent");
+        let legacy_library = legacy.join("library");
+        fs::create_dir_all(&legacy_library).unwrap();
+        fs::write(legacy_library.join("2024 - Paper A.md"), "# A").unwrap();
+        fs::write(
+            legacy.join("matrix-settings.json"),
+            serde_json::json!({ "libraryRoot": legacy_library.to_string_lossy() }).to_string(),
+        )
+        .unwrap();
+        let effective = dir.join("install").join("agent");
+
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store.settings.last_workspace = Some(legacy_library.to_string_lossy().into_owned());
+        store.settings.known_workspaces = vec![legacy_library.to_string_lossy().into_owned()];
+
+        let writes = std::cell::RefCell::new(0u32);
+        let migrated =
+            migrate_legacy_home_agent_dir_to(&mut store.settings, &effective, &legacy, &|_| {
+                *writes.borrow_mut() += 1;
+                Ok(())
+            })
+            .unwrap();
+        assert!(migrated);
+        assert!(!legacy.exists());
+        let new_paper = effective.join("library").join("2024 - Paper A.md");
+        assert!(new_paper.exists());
+        let settings_json = fs::read_to_string(effective.join("matrix-settings.json")).unwrap();
+        assert!(settings_json.contains(
+            effective
+                .join("library")
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .as_str()
+        ));
+        let expected_library = effective.join("library").to_string_lossy().into_owned();
+        assert_eq!(
+            store.settings.last_workspace.as_deref(),
+            Some(expected_library.as_str())
+        );
+        assert_eq!(store.settings.known_workspaces, vec![expected_library]);
+        assert_eq!(*writes.borrow(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn migration_never_clobbers_an_agent_dir_that_already_has_data() {
+        let dir = test_dir("migrate-agent-dir-occupied");
+        let legacy = dir.join("home").join(".MatrixAgent");
+        fs::create_dir_all(legacy.join("library")).unwrap();
+        fs::write(legacy.join("library").join("old.md"), "old").unwrap();
+        let effective = dir.join("install").join("agent");
+        fs::create_dir_all(effective.join("library")).unwrap();
+        fs::write(effective.join("library").join("new.md"), "new").unwrap();
+
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        let migrated =
+            migrate_legacy_home_agent_dir_to(&mut store.settings, &effective, &legacy, &|_| Ok(()))
+                .unwrap();
+        assert!(!migrated);
+        assert!(legacy.exists());
+        assert!(effective.join("library").join("new.md").exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

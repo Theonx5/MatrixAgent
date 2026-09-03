@@ -9,7 +9,7 @@ incremental writes under a file lock), and PiDeck's Settings → General →
 
 | Scope | Path | Notes |
 |---|---|---|
-| Global | `<agentDir>/settings.json` | `<agentDir>` defaults to `~/.MatrixAgent` (Desktop always passes this; standalone Host falls back the same way) |
+| Global | `<agentDir>/settings.json` | `<agentDir>` defaults to the install-directory `agent\` folder on Windows releases (fallback `~/.MatrixAgent`; Desktop always passes it, standalone Host resolves the same way) |
 | Project | `<workspace>/.pi/settings.json` | Only loaded when the project is trusted |
 
 Project settings deep-merge over global settings (project wins). PiDeck's More
