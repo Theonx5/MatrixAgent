@@ -112,7 +112,7 @@ async function performFetch(
   init: Parameters<MatrixFetch>[1],
   dispatcher?: Agent,
 ): Promise<Awaited<ReturnType<MatrixFetch>>> {
-  const headers = { "User-Agent": "MatrixAgent/0.2.5", ...(init?.headers ?? {}) };
+  const headers = { "User-Agent": "MatrixAgent/0.2.6", ...(init?.headers ?? {}) };
   const response = dispatcher
     ? await undiciFetch(input, {
         method: init?.method,

@@ -152,7 +152,7 @@ Three signing layers are involved:
 ```powershell
 pnpm sign:windows
 # or
-pnpm sign:windows path\to\PaperMatrix_0.2.5_x64-setup.exe
+pnpm sign:windows path\to\PaperMatrix_0.2.6_x64-setup.exe
 ```
 
 ## Public Release Requirements
