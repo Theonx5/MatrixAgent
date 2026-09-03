@@ -658,7 +658,10 @@ export async function createSession(
     // C4 candidate-commit: build new session fully before disposing old (B-SESSION-TXN-01)
     const prev = captureActiveSessionState(g, server.identity);
 
-    const sessionManager = SessionManager.create(g.canonicalCwd);
+    const sessionManager = SessionManager.create(
+      g.canonicalCwd,
+      sessionStorageDirs(factory, g).activeDir,
+    );
     if (options?.parentSession) {
       sessionManager.newSession({ parentSession: options.parentSession });
     }
@@ -960,7 +963,10 @@ export async function openSession(
       return await factory.promoteBackgroundRuntime(g, retained);
     }
 
-    const listed = await SessionManager.list(g.canonicalCwd);
+    const listed = await SessionManager.list(
+      g.canonicalCwd,
+      sessionStorageDirs(factory, g).activeDir,
+    );
     const match = listed.find((s) => factory.sessionPathsEqual(s.path, sessionPath));
     if (!match) {
       return {

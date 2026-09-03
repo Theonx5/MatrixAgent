@@ -54,7 +54,10 @@ pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
    `validate.test.ts`。协议文档 `docs/architecture/protocol.md` 同步更新。
 2. **安全边界**：只从 `~/.MatrixAgent` 加载用户级 Package，不继承本机
    `~/.pi/agent`；打开工作区不得执行 `<workspace>/.pi/extensions`
-   （`SettingsManager` 固定 `projectTrusted: false`）。
+   （`SettingsManager` 固定 `projectTrusted: false`）。Host 进程环境必须自密封
+   （`packages/pi-host/src/env-sandbox.ts`，`main.ts` 的第一个 import）：清掉所有继承的
+   `PI_*` 变量并把 `PI_CODING_AGENT_DIR`钉到隔离 agentDir；Rust 侧 spawn 同样按 `PI_`
+   前缀全量清洗后仅回注该变量。所有 `SessionManager` 静态调用必须显式传 sessionDir。
 3. **用户数据不入库**：`~/.MatrixAgent` 下的凭据、设置、会话绝不提交；
    更新签名私钥 `apps/desktop/src-tauri/.tauri-updater.key`、`.env`、`*.pfx`
    绝不提交。测试使用

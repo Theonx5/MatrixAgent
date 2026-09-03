@@ -2,7 +2,15 @@
 /**
  * PiDeck Host entry — owns all Pi SDK services.
  * Transport: JSONL on stdin/stdout; logs on stderr.
+ *
+ * Import order matters: `./env-sandbox.js` must stay the FIRST import. It
+ * seals the process environment (scrubs inherited `PI_*` variables and pins
+ * `PI_CODING_AGENT_DIR` to the isolated agent dir) before the SDK tree below
+ * is evaluated, so SDK path constants and every `getAgentDir()` fallback
+ * resolve inside the app's own data directory instead of an external Pi CLI
+ * installation (`~/.pi/agent`).
  */
+import { sealedAgentDir } from "./env-sandbox.js";
 import "./sdk-adapters/install-host-sdk-adapters.js";
 import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -37,12 +45,7 @@ import { FileCredentialStore } from "./credential-store.js";
 import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
-import {
-  isExternalPiAgentDir,
-  matrixLibraryRoot,
-  migrateLegacyPideckData,
-  resolveIsolatedAgentDir,
-} from "./pideck-data.js";
+import { isExternalPiAgentDir, matrixLibraryRoot, migrateLegacyPideckData } from "./pideck-data.js";
 import {
   applyHostNetworkSettings,
   ensureGlobalSettingsFile,
@@ -56,14 +59,8 @@ import { getInternalRuntime } from "./internal-runtime.js";
 import { createMatrixHandlers } from "./matrix/controller.js";
 import { MatrixService } from "./matrix/service.js";
 
-function resolveAgentDir(): string {
-  const arg = process.argv.find((a) => a.startsWith("--agent-dir="));
-  return resolveIsolatedAgentDir({
-    envDir: process.env.PI_CODING_AGENT_DIR,
-    argDir: arg ? arg.slice("--agent-dir=".length) : null,
-  });
-}
-
+// Resolution + environment sealing live in env-sandbox.js so the seal can run
+// before the SDK evaluates (see the import-order note at the top of this file).
 function resolveArg(prefix: string): string | null {
   const arg = process.argv.find((a) => a.startsWith(prefix));
   const value = arg?.slice(prefix.length).trim();
@@ -82,8 +79,18 @@ function resolveInitialSessionBootstrap(): {
 } {
   const sessionPath = resolveArg("--initial-session=");
   const continueRecent = process.argv.includes("--continue-recent");
+  // A persisted lastSessionPath inside the external Pi CLI directory would make
+  // every launch reopen (and append to) the CLI's own live session — two
+  // writers on one session tree. Defense in depth alongside the desktop-side
+  // sanitize: refuse the path and fall back to the isolated session storage.
+  const safeSessionPath = sessionPath && !isExternalPiAgentDir(sessionPath) ? sessionPath : null;
+  if (sessionPath && !safeSessionPath) {
+    process.stderr.write(
+      `[pideck] refusing initial session inside the external Pi CLI directory\n`,
+    );
+  }
   return {
-    ...(sessionPath ? { sessionPath } : {}),
+    ...(safeSessionPath ? { sessionPath: safeSessionPath } : {}),
     ...(continueRecent ? { continueRecent: true } : {}),
   };
 }
@@ -162,7 +169,7 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
 }
 
 async function main(): Promise<void> {
-  const agentDir = resolveAgentDir();
+  const agentDir = sealedAgentDir();
   mkdirSync(agentDir, { recursive: true });
 
   // Synchronous, before any network activity: proxy/idle-timeout from global

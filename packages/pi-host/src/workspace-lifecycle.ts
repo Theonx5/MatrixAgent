@@ -788,10 +788,14 @@ export class WorkspaceLifecycle {
         settingsManager,
       });
       markStep("resourceLoader.reload");
-      const sessionManager = await createWorkspaceSessionManager(args.canonicalCwd, {
-        sessionPath: args.sessionPath,
-        continueRecent: args.continueRecent,
-      });
+      const sessionManager = await createWorkspaceSessionManager(
+        this.context.deps.agentDir,
+        args.canonicalCwd,
+        {
+          sessionPath: args.sessionPath,
+          continueRecent: args.continueRecent,
+        },
+      );
       await Promise.resolve(this.context.deps.refreshModelHealth());
       this.context.onModelHealthChanged();
       markStep("refreshModelHealth");

@@ -1,5 +1,5 @@
 use crate::desktop_settings::{DesktopSettings, DesktopSettingsStore};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -1742,12 +1742,33 @@ pub(crate) const PIDECK_BUNDLED_BASH: &str = "PIDECK_BUNDLED_BASH";
 
 /// Pi CLI identity inherited from the desktop process. Matrix Agent always uses
 /// the bundled SDK and `~/.MatrixAgent` (or a user-chosen isolated directory).
-pub(crate) fn host_child_removed_env() -> &'static [&'static str] {
-    &[
-        "PI_CODING_AGENT_SESSION_DIR",
-        "PI_CODING_AGENT",
-        "PI_PACKAGE_DIR",
-    ]
+///
+/// Every inherited `PI_*` variable is stripped from the Host child: an external
+/// Pi CLI environment (session identity like `PI_SESSION_FILE`/`PI_SESSION_ID`,
+/// model picks like `PI_PROVIDER`/`PI_MODEL`/`PI_REASONING_LEVEL`, plus
+/// redirection overrides like `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`
+/// and `PI_PACKAGE_DIR`) must not leak into the bundled SDK. The one variable
+/// the Host needs is re-set afterwards by [`host_child_explicit_env`].
+/// `PIDECK_*` does not match the `PI_` prefix and is unaffected.
+pub(crate) fn host_child_removed_env() -> Vec<OsString> {
+    inherited_pi_env_keys(std::env::vars_os().map(|(key, _value)| key))
+}
+
+/// Pure filter behind [`host_child_removed_env`], exposed for tests so they do
+/// not have to mutate the test runner's global environment.
+pub(crate) fn inherited_pi_env_keys<I>(keys: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    keys.into_iter()
+        .filter(|key| is_pi_inherited_env_key(key.as_os_str()))
+        .collect()
+}
+
+/// Case-insensitive `PI_` prefix match (`PIDECK_*` is `P`,`I`,`D` — no match).
+pub(crate) fn is_pi_inherited_env_key(key: &OsStr) -> bool {
+    let bytes = key.as_encoded_bytes();
+    bytes.len() >= 3 && bytes[..3].eq_ignore_ascii_case(b"PI_")
 }
 
 /// Env vars explicitly set on the Host child. PATH is omitted so the process

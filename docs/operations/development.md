@@ -274,6 +274,13 @@ $env:PI_CODING_AGENT_DIR = "$env:TEMP\pideck-test-agent"
 
 Or pass `--agent-dir=<path>` to the host. Never point tests at real `~/.MatrixAgent` or `~/.pi/agent` for mutations.
 
+Under a test runner (`VITEST` set) the entry-time environment seal is
+inert, so fixtures keep full control of their own `PI_*` state. A Host
+started as the real entry (`tsx src/main.ts`, staged `main.js`) always
+self-seals: inherited `PI_*` variables are scrubbed and
+`PI_CODING_AGENT_DIR` is pinned to the resolved isolated dir, so a bare
+`pnpm dev:host` from a Pi CLI shell cannot inherit `~/.pi/agent`.
+
 On macOS and other POSIX shells, use a temporary directory outside the real
 agent data, for example:
 

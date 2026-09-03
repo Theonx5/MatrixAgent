@@ -6,15 +6,17 @@ mod tests {
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
         build_shutdown_line, bundled_bash_from_git, drain_complete_lines, extract_host_instance_id,
-        finish_monitor_task, host_child_explicit_env, host_child_removed_env,
-        is_current_child_generation, node_executable_name, node_runtime_candidates,
-        push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line, resolve_node_from_dirs,
-        resolve_portable_git_from_dirs, should_auto_restart, strip_verbatim_prefix,
-        write_host_stdin, AutoRestartEpoch, HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE,
-        HOST_SHUTDOWN_GRACE, MAX_HOST_STDOUT_LINE_BYTES, PIDECK_BUNDLED_BASH, PIDECK_BUNDLED_GIT,
+        finish_monitor_task, host_child_explicit_env, inherited_pi_env_keys,
+        is_current_child_generation, is_pi_inherited_env_key, node_executable_name,
+        node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
+        resolve_node_from_dirs, resolve_portable_git_from_dirs, should_auto_restart,
+        strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch, HostChildSession,
+        APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE, MAX_HOST_STDOUT_LINE_BYTES,
+        PIDECK_BUNDLED_BASH, PIDECK_BUNDLED_GIT,
     };
     #[cfg(unix)]
     use crate::pi_host::{is_executable_file, unix_child_exited_without_reaping};
+    use std::ffi::{OsStr, OsString};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
@@ -269,12 +271,71 @@ rl.on('line', (line) => {
     }
 
     #[test]
-    fn host_child_removed_env_drops_pi_cli_identity() {
-        let keys = host_child_removed_env();
-        assert!(keys.contains(&"PI_CODING_AGENT_SESSION_DIR"));
-        assert!(keys.contains(&"PI_CODING_AGENT"));
-        assert!(keys.contains(&"PI_PACKAGE_DIR"));
-        assert!(!keys.contains(&"PI_CODING_AGENT_DIR"));
+    fn inherited_pi_env_keys_strips_every_pi_var_but_keeps_pideck() {
+        let keys: Vec<String> = inherited_pi_env_keys([
+            OsString::from("PI_SESSION_FILE"),
+            OsString::from("PI_SESSION_ID"),
+            OsString::from("PI_PROVIDER"),
+            OsString::from("PI_MODEL"),
+            OsString::from("PI_REASONING_LEVEL"),
+            OsString::from("PI_OFFLINE"),
+            OsString::from("PI_PACKAGE_DIR"),
+            OsString::from("PI_CODING_AGENT_SESSION_DIR"),
+            OsString::from("PI_CODING_AGENT_DIR"),
+            OsString::from("PI_CODING_AGENT"),
+        ])
+        .into_iter()
+        .map(|key| key.to_string_lossy().into_owned())
+        .collect();
+        for name in [
+            "PI_SESSION_FILE",
+            "PI_SESSION_ID",
+            "PI_PROVIDER",
+            "PI_MODEL",
+            "PI_REASONING_LEVEL",
+            "PI_OFFLINE",
+            "PI_PACKAGE_DIR",
+            "PI_CODING_AGENT_SESSION_DIR",
+            "PI_CODING_AGENT_DIR",
+            "PI_CODING_AGENT",
+        ] {
+            assert!(keys.iter().any(|key| key == name), "missing {name}");
+        }
+    }
+
+    #[test]
+    fn inherited_pi_env_keys_is_prefix_and_case_insensitive() {
+        let keys: Vec<String> = inherited_pi_env_keys([
+            OsString::from("pi_offline"),
+            OsString::from("Pi_Session_File"),
+            OsString::from("PIDECK_HOST_CACHE_DIR"),
+            OsString::from("PI"),
+            OsString::from("PIE"),
+            OsString::from("PATH"),
+            OsString::from("NODE_PATH"),
+        ])
+        .into_iter()
+        .map(|key| key.to_string_lossy().into_owned())
+        .collect();
+        assert_eq!(
+            keys,
+            vec!["pi_offline".to_string(), "Pi_Session_File".to_string()]
+        );
+    }
+
+    #[test]
+    fn is_pi_inherited_env_key_matches_only_the_pi_underscore_prefix() {
+        assert!(is_pi_inherited_env_key(OsStr::new("PI_MODEL")));
+        assert!(is_pi_inherited_env_key(OsStr::new("pi_offline")));
+        assert!(is_pi_inherited_env_key(OsStr::new("Pi_X")));
+        assert!(!is_pi_inherited_env_key(OsStr::new(
+            "PIDECK_HOST_CACHE_DIR"
+        )));
+        assert!(!is_pi_inherited_env_key(OsStr::new("PIDECK")));
+        assert!(!is_pi_inherited_env_key(OsStr::new("PI")));
+        assert!(!is_pi_inherited_env_key(OsStr::new("PIE")));
+        assert!(!is_pi_inherited_env_key(OsStr::new("PATH")));
+        assert!(!is_pi_inherited_env_key(OsStr::new("")));
     }
 
     #[test]

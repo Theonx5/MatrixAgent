@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { logger } from "./logger.js";
+import { sessionStorageDirs } from "./session-storage.js";
 
 export type WorkspaceSessionBootstrap = {
   sessionPath?: string;
@@ -25,15 +26,22 @@ export function sessionPathsEqual(left: string | undefined, right: string): bool
  * header cwd, so a stale lastSessionPath from another Workspace must be
  * rejected the same way interactive `session.open` does: only paths returned
  * by `SessionManager.list(canonicalCwd)` are eligible.
+ *
+ * Every static SessionManager call receives the explicit session dir derived
+ * from `agentDir`. The SDK would otherwise fall back to its own
+ * `getAgentDir()` environment resolution, which can point at an external Pi
+ * CLI workspace (`~/.pi/agent`) — sessions must never leak there.
  */
 export async function createWorkspaceSessionManager(
+  agentDir: string,
   canonicalCwd: string,
   bootstrap: WorkspaceSessionBootstrap = {},
 ): Promise<SessionManager> {
+  const activeDir = sessionStorageDirs(agentDir, canonicalCwd).activeDir;
   if (bootstrap.sessionPath) {
     try {
       if (existsSync(bootstrap.sessionPath)) {
-        const listed = await SessionManager.list(canonicalCwd);
+        const listed = await SessionManager.list(canonicalCwd, activeDir);
         const match = listed.find((session) =>
           sessionPathsEqual(session.path, bootstrap.sessionPath!),
         );
@@ -54,7 +62,7 @@ export async function createWorkspaceSessionManager(
     }
   }
   if (bootstrap.continueRecent) {
-    return SessionManager.continueRecent(canonicalCwd);
+    return SessionManager.continueRecent(canonicalCwd, activeDir);
   }
-  return SessionManager.create(canonicalCwd);
+  return SessionManager.create(canonicalCwd, activeDir);
 }

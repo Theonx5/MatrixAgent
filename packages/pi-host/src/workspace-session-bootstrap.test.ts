@@ -15,7 +15,7 @@ afterEach(() => {
   }
 });
 
-function tempWorkspace(): { cwd: string } {
+function tempWorkspace(): { cwd: string; agentDir: string } {
   const root = mkdtempSync(join(tmpdir(), "pideck-session-bootstrap-"));
   roots.push(root);
   const cwd = join(root, "workspace");
@@ -23,7 +23,7 @@ function tempWorkspace(): { cwd: string } {
   mkdirSync(cwd, { recursive: true });
   mkdirSync(agentDir, { recursive: true });
   process.env.PI_CODING_AGENT_DIR = agentDir;
-  return { cwd };
+  return { cwd, agentDir };
 }
 
 function sessionDirFor(cwd: string): string {
@@ -59,27 +59,27 @@ function writeNamedSession(cwd: string, id: string, name: string, mtime: Date): 
 
 describe("createWorkspaceSessionManager", () => {
   it("creates a new session by default", async () => {
-    const { cwd } = tempWorkspace();
-    const first = await createWorkspaceSessionManager(cwd);
-    const second = await createWorkspaceSessionManager(cwd);
+    const { cwd, agentDir } = tempWorkspace();
+    const first = await createWorkspaceSessionManager(agentDir, cwd);
+    const second = await createWorkspaceSessionManager(agentDir, cwd);
     expect(first.getSessionFile()).not.toBe(second.getSessionFile());
   });
 
   it("opens the requested session path", async () => {
-    const { cwd } = tempWorkspace();
+    const { cwd, agentDir } = tempWorkspace();
     const sessionPath = writeNamedSession(
       cwd,
       "11111111-1111-4111-8111-111111111111",
       "kept",
       new Date("2026-01-01T00:00:00.000Z"),
     );
-    const opened = await createWorkspaceSessionManager(cwd, { sessionPath });
+    const opened = await createWorkspaceSessionManager(agentDir, cwd, { sessionPath });
     expect(opened.getSessionFile()).toBe(sessionPath);
     expect(opened.getSessionName()).toBe("kept");
   });
 
   it("continues the most recent session when asked", async () => {
-    const { cwd } = tempWorkspace();
+    const { cwd, agentDir } = tempWorkspace();
     writeNamedSession(
       cwd,
       "11111111-1111-4111-8111-111111111111",
@@ -92,19 +92,19 @@ describe("createWorkspaceSessionManager", () => {
       "recent",
       new Date("2026-01-02T00:00:00.000Z"),
     );
-    const continued = await createWorkspaceSessionManager(cwd, { continueRecent: true });
+    const continued = await createWorkspaceSessionManager(agentDir, cwd, { continueRecent: true });
     expect(continued.getSessionFile()).toBe(recentPath);
   });
 
   it("falls back to continueRecent when the requested path is missing", async () => {
-    const { cwd } = tempWorkspace();
+    const { cwd, agentDir } = tempWorkspace();
     const recentPath = writeNamedSession(
       cwd,
       "22222222-2222-4222-8222-222222222222",
       "recent",
       new Date("2026-01-02T00:00:00.000Z"),
     );
-    const opened = await createWorkspaceSessionManager(cwd, {
+    const opened = await createWorkspaceSessionManager(agentDir, cwd, {
       sessionPath: join(cwd, "missing.jsonl"),
       continueRecent: true,
     });
@@ -135,7 +135,7 @@ describe("createWorkspaceSessionManager", () => {
       new Date("2026-01-02T00:00:00.000Z"),
     );
 
-    const opened = await createWorkspaceSessionManager(cwdA, {
+    const opened = await createWorkspaceSessionManager(agentDir, cwdA, {
       sessionPath: foreignPath,
       continueRecent: true,
     });

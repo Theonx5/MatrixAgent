@@ -15,6 +15,33 @@
 - Reimplement Pi Package install, filtering, or resource discovery.
 - Parse `pi list` text or own Pi `settings.json`.
 
+## Host environment sandbox
+
+Matrix Agent bundles the Pi SDK and resolves all Pi state under its own agent
+directory (`~/.MatrixAgent` by default). An external Pi CLI installation on the
+same machine (`~/.pi/agent`) must not leak in through either side of the spawn
+boundary:
+
+- **Rust spawn (desktop → Host).** Before the Host child starts, every inherited
+  environment variable whose name starts with `PI_` (case-insensitive) is
+  removed — session identity (`PI_SESSION_FILE`, `PI_SESSION_ID`), model picks
+  (`PI_PROVIDER`, `PI_MODEL`, `PI_REASONING_LEVEL`), and redirection overrides
+  (`PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `PI_PACKAGE_DIR`).
+  Rust then explicitly sets `PI_CODING_AGENT_DIR` to the isolated agent dir.
+  `PIDECK_*` does not match the `PI_` prefix and survives.
+- **Node seal (Host entry).** `main.ts` imports `./env-sandbox.js` as its first
+  import; the SDK tree evaluates only after the seal has run. The seal
+  re-scrubs inherited `PI_*` variables (a Host started bare — dev scripts,
+  smokes — may inherit a Pi CLI shell environment) and pins
+  `PI_CODING_AGENT_DIR` to the isolated dir, so every SDK `getAgentDir()`
+  fallback (sessions, auth, keybindings, models store, skills, extension
+  loader, managed fd/rg binaries, debug log) resolves inside the app's own data
+  directory even where a call site passes no explicit `agentDir`. An inherited
+  `~/.pi/agent` value is rejected wherever it appears (arg or env).
+- **Session storage.** Every `SessionManager` static call passes the explicit
+  session dir derived from the isolated `agentDir` (`session-storage.ts`), so
+  session listing/creation never depends on environment fallbacks.
+
 ## Node Pi Host
 
 **Owns**
