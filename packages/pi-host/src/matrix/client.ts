@@ -238,11 +238,22 @@ export class MatrixApiClient {
   }
 
   async fetchMarkdown(assetId: string, signal?: AbortSignal): Promise<string> {
-    const payload = await this.requestJson(
+    const response = await this.request(
       `/api/collections/assets/${encodeURIComponent(assetId)}/md`,
       { signal },
       { auth: true },
     );
+    // A 0-byte Markdown is legitimate server data (MinerU can emit empty
+    // output): an empty body parses as empty content, not as a transport
+    // failure — otherwise such papers loop forever.
+    const text = await response.text().catch(() => "");
+    if (!text.trim()) return "";
+    let payload: unknown = text;
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      /* plain-text body */
+    }
     const content = extractMarkdown(payload);
     if (content == null) throw new MatrixHttpError(500, "Markdown response was invalid");
     return content;
@@ -254,7 +265,11 @@ export class MatrixApiClient {
       { signal },
       { auth: true },
     );
-    return decodeImagesZip(Buffer.from(await response.arrayBuffer()));
+    const bytes = Buffer.from(await response.arrayBuffer());
+    // An empty 200 body means "no images for this asset" — same as a valid
+    // empty ZIP, never a transport failure.
+    if (bytes.length === 0) return bytes;
+    return decodeImagesZip(bytes);
   }
 
   private async fetchManifestPage(
@@ -436,8 +451,8 @@ function extractMarkdown(payload: unknown): string | null {
       ? (record.data as Record<string, unknown>)
       : record;
   for (const key of ["content", "markdown", "md", "text", "body"]) {
-    const value = pickString(nested[key]) ?? pickString(record[key]);
-    if (value != null) return value;
+    const value = nested[key] ?? record[key];
+    if (typeof value === "string") return value;
   }
   return null;
 }

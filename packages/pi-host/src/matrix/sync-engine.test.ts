@@ -63,7 +63,7 @@ function manifest(items: PaperMatrixManifest["items"]): PaperMatrixManifest {
 
 function fakeServer(options: {
   pages?: PaperMatrixManifest[];
-  markdown?: Record<string, string | { status: number }>;
+  markdown?: Record<string, string | { status: number } | Record<string, unknown>>;
   images?: Record<string, Buffer | { status: number }>;
   unauthorizedOnce?: boolean;
   rateLimitOnce?: boolean;
@@ -107,9 +107,10 @@ function fakeServer(options: {
       const assetId = decodeURIComponent(mdMatch[1] ?? "");
       const entry = options.markdown?.[assetId];
       if (entry && typeof entry === "object" && "status" in entry) {
-        return jsonResult({ detail: "missing" }, entry.status);
+        return jsonResult({ detail: "missing" }, Number(entry.status));
       }
       if (typeof entry === "string") return jsonResult({ content: entry });
+      if (entry && typeof entry === "object") return jsonResult(entry);
       return jsonResult({ detail: "missing" }, 404);
     }
     const imageMatch = url.pathname.match(/\/api\/collections\/sync\/images\/([^/]+)$/u);
@@ -517,9 +518,189 @@ describe("MatrixSyncEngine", () => {
     expect(result.skipped).toBe(1);
     expect(result.downloaded).toBe(0);
     const state = JSON.parse(readFileSync(join(library, ".sync", "state.json"), "utf8")) as {
-      items: Record<string, { mdUpdatedAt: string | null }>;
+      items: Record<
+        string,
+        {
+          mdUpdatedAt: string | null;
+          failedSyncs?: number;
+          lastFailedAt?: string;
+        }
+      >;
     };
-    expect(state.items["doi:10.1/a"]).toBeUndefined();
+    // §6.3: a skipped paper keeps an UNSYNCED baseline (md_updated_at null) so
+    // the next round naturally retries it, with failure bookkeeping recorded.
+    const failed = state.items["doi:10.1/a"];
+    expect(failed?.mdUpdatedAt).toBeNull();
+    expect(failed?.failedSyncs).toBe(1);
+    expect(typeof failed?.lastFailedAt).toBe("string");
+  });
+
+  it("skips a paper after markdown failures without aborting the run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
+    const library = join(root, "library");
+    await seedLibrary(library);
+    const paperBroken = {
+      ...paperA,
+      dedup_key: "doi:10.1/broken",
+      doi: "10.1/broken",
+      title: "Broken Paper",
+      asset: { asset_id: "asset-broken", md_updated_at: "2026-01-02T00:00:00Z", md_size: 4 },
+    };
+    const { fetch, calls } = fakeServer({
+      pages: [manifest([paperA, paperBroken])],
+      markdown: { "asset-a": "# A\n", "asset-broken": { status: 500 } },
+    });
+    const engine = new MatrixSyncEngine(
+      new MatrixApiClient({
+        baseUrl: "https://papermatrix.online",
+        fetch,
+        getToken: () => "tok",
+      }),
+    );
+    const result = await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    // The broken paper must not poison the round: the healthy one lands.
+    expect(readFileSync(join(library, "LLM", "2024 - Paper A.md"), "utf8")).toContain("# A");
+    expect(result.skipped).toBe(1);
+    const state = JSON.parse(readFileSync(join(library, ".sync", "state.json"), "utf8")) as {
+      items: Record<string, { mdUpdatedAt: string | null; failedSyncs?: number }>;
+    };
+    expect(state.items["doi:10.1/a"]?.mdUpdatedAt).toBe("2026-01-02T00:00:00Z");
+
+    // Next round: the healthy paper is NOT refetched (baseline advanced), the
+    // failing one retries exactly itself (1 attempt + 2 retries).
+    const mdCalls = (asset: string) =>
+      calls.filter((call) => call.includes(`/assets/${asset}/md`)).length;
+    expect(mdCalls("asset-a")).toBe(1);
+    expect(mdCalls("asset-broken")).toBe(3);
+    await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    expect(mdCalls("asset-a")).toBe(1);
+    expect(mdCalls("asset-broken")).toBe(6);
+  });
+
+  it("backs off a paper after three consecutive failures", async () => {
+    const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
+    const library = join(root, "library");
+    await seedLibrary(library);
+    const { fetch, calls } = fakeServer({
+      pages: [manifest([paperA])],
+      markdown: { "asset-a": { status: 500 } },
+    });
+    const engine = new MatrixSyncEngine(
+      new MatrixApiClient({
+        baseUrl: "https://papermatrix.online",
+        fetch,
+        getToken: () => "tok",
+      }),
+    );
+    const runOpts = {
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await engine.run({ ...runOpts });
+    }
+    const mdCallsAfterThree = calls.filter((call) => call.includes("/md")).length;
+    expect(mdCallsAfterThree).toBeGreaterThanOrEqual(3);
+
+    // Fourth round immediately after: the paper is in its skip window —
+    // zero requests, the run still completes cleanly.
+    const skipped = await engine.run({ ...runOpts });
+    expect(calls.filter((call) => call.includes("/md")).length).toBe(mdCallsAfterThree);
+    expect(skipped.total).toBe(0);
+
+    // Once the backoff window elapses, the paper is retried.
+    const state = JSON.parse(readFileSync(join(library, ".sync", "state.json"), "utf8")) as {
+      items: Record<string, { lastFailedAt?: string }>;
+    };
+    const lastFailedAt = state.items["doi:10.1/a"]?.lastFailedAt ?? "";
+    const backoffDone = new Date(Date.parse(lastFailedAt) + 3 * 180 * 60_000);
+    const retried = await engine.run({
+      ...runOpts,
+      now: () => backoffDone,
+    });
+    expect(calls.filter((call) => call.includes("/md")).length).toBeGreaterThan(mdCallsAfterThree);
+    expect(retried.skipped).toBe(1);
+  });
+
+  it("treats an empty markdown body as valid content and advances the baseline", async () => {
+    const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
+    const library = join(root, "library");
+    await seedLibrary(library);
+    const { fetch, calls } = fakeServer({
+      pages: [manifest([paperA])],
+      markdown: { "asset-a": { content: "" } },
+    });
+    const engine = new MatrixSyncEngine(
+      new MatrixApiClient({
+        baseUrl: "https://papermatrix.online",
+        fetch,
+        getToken: () => "tok",
+      }),
+    );
+    const first = await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    expect(first.downloaded).toBe(1);
+    const paperPath = join(library, "LLM", "2024 - Paper A.md");
+    expect(readFileSync(paperPath, "utf8")).toContain("md_updated_at:");
+    // A 0-byte body is a settled baseline, not a failure loop: the next round
+    // pulls the manifest only.
+    await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    expect(calls.filter((call) => call.includes("/md")).length).toBe(1);
+  });
+
+  it("treats an empty images zip body as no images", async () => {
+    const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
+    const library = join(root, "library");
+    await seedLibrary(library);
+    const paperWithImages = {
+      ...paperA,
+      asset: {
+        asset_id: "asset-a",
+        md_updated_at: "2026-01-02T00:00:00Z",
+        md_size: 4,
+        images: { files: [{ name: "img_0.jpg", size: 12 }], total_size: 12 },
+      },
+    };
+    const { fetch } = fakeServer({
+      pages: [manifest([paperWithImages])],
+      markdown: { "asset-a": "# A\n" },
+      images: { "asset-a": Buffer.alloc(0) },
+    });
+    const engine = new MatrixSyncEngine(
+      new MatrixApiClient({
+        baseUrl: "https://papermatrix.online",
+        fetch,
+        getToken: () => "tok",
+      }),
+    );
+    const result = await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    expect(result.downloaded).toBe(1);
+    expect(result.skipped).toBe(0);
+    const state = JSON.parse(readFileSync(join(library, ".sync", "state.json"), "utf8")) as {
+      items: Record<string, { mdUpdatedAt: string | null; imagesFetched?: boolean }>;
+    };
+    expect(state.items["doi:10.1/a"]?.mdUpdatedAt).toBe("2026-01-02T00:00:00Z");
+    expect(state.items["doi:10.1/a"]?.imagesFetched).toBe(true);
   });
 
   it("keeps markdown when an image zip cannot be extracted", async () => {

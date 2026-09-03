@@ -73,6 +73,21 @@ vanished on disk while its sync state said current is refetched on the next run,
 and manifest items with duplicate `dedup_key` values are processed once (first
 wins) so a server-side duplicate cannot clobber another paper's state.
 
+Sync progress and failure handling follow the library-sync protocol (§6.3):
+- `.sync/state.json` is the diff baseline and is checkpointed atomically
+  (fsync'd) after every settled paper, so a crash or a permanently failing
+  paper can never re-trigger a full-library refetch; skipped papers keep an
+  unsynced baseline and retry exactly themselves next round.
+- A paper that fails after two in-round retries is skipped, not fatal; three
+  consecutive failures put it on a per-paper backoff (skip ~1 round, then ~3
+  rounds, then at most one attempt per 30 minutes) until it succeeds.
+- A 0-byte Markdown and an empty (or empty-bodied) images archive are valid
+  server data and advance the baseline; only HTTP errors or corrupt ZIPs are
+  treated as failures.
+- Only one sync round runs at a time (concurrent triggers merge into the
+  running round), and progress counts only papers that actually needed
+  downloading in the current round.
+
 ## Auth
 
 Host persists `{ user, token, issuedAt, rememberPassword }` at

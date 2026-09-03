@@ -4,6 +4,7 @@ import {
   chmod,
   cp,
   mkdir,
+  open,
   readdir,
   readFile,
   rename,
@@ -56,6 +57,10 @@ export type LocalPaperState = {
   paths: string[];
   bodyHash: string | null;
   imagesFetched?: boolean;
+  /** Consecutive failed sync attempts — drives the per-paper backoff. */
+  failedSyncs?: number;
+  /** Wall-clock stamp of the last failed attempt (ISO). */
+  lastFailedAt?: string;
   meta: {
     title: string;
     authors: string[];
@@ -98,10 +103,24 @@ async function ensureDir(path: string): Promise<void> {
   if (process.platform !== "win32") await chmod(path, DIR_MODE).catch(() => undefined);
 }
 
-async function writeAtomicFile(path: string, content: string | Uint8Array): Promise<void> {
+async function writeAtomicFile(
+  path: string,
+  content: string | Uint8Array,
+  options: { fsync?: boolean } = {},
+): Promise<void> {
   await ensureDir(dirname(path));
   const tempPath = `${path}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, content);
+  if (options.fsync) {
+    const handle = await open(tempPath, "wx");
+    try {
+      await handle.writeFile(content);
+      await handle.sync();
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  } else {
+    await writeFile(tempPath, content);
+  }
   try {
     await rename(tempPath, path);
   } catch (error) {
@@ -254,9 +273,12 @@ export async function loadSyncState(libraryRoot: string): Promise<SyncStateFile>
 }
 
 export async function saveSyncState(libraryRoot: string, state: SyncStateFile): Promise<void> {
+  // The state file IS the diff baseline: fsync it so a crash or power loss
+  // cannot roll the baseline back into a full-library refetch.
   await writeAtomicFile(
     join(libraryRoot, ".sync", "state.json"),
     `${JSON.stringify(state, null, 2)}\n`,
+    { fsync: true },
   );
 }
 
@@ -404,7 +426,7 @@ async function extractImagesZip(zipBytes: Buffer, destDir: string): Promise<void
         chunks.push(piece);
         written += piece.length;
       }
-      if (overflow || written === 0) continue;
+      if (overflow) continue;
       await writeAtomicFile(target, Buffer.concat(chunks));
       files += 1;
       bytes += written;
@@ -534,6 +556,28 @@ export function itemToLocalState(
       bibtex: item.bibtex ?? null,
     },
   };
+}
+
+/**
+ * Per-paper backoff schedule (§6.3/§6.4): the first two consecutive failures
+ * retry on the next round, the third skips roughly one round, the fourth
+ * skips roughly three rounds, and beyond that the paper is retried at most
+ * every 30 minutes. A successful sync clears the bookkeeping entirely.
+ */
+export function paperBackoffDue(
+  state: LocalPaperState,
+  now: Date,
+  pollIntervalMin: number,
+): boolean {
+  const count = state.failedSyncs ?? 0;
+  if (count < 3) return true;
+  const last = state.lastFailedAt ? Date.parse(state.lastFailedAt) : Number.NaN;
+  if (!Number.isFinite(last)) return true;
+  const elapsedMs = now.getTime() - last;
+  const roundMs = Math.max(pollIntervalMin, 1) * 60_000;
+  if (count === 3) return elapsedMs >= roundMs * 2;
+  if (count === 4) return elapsedMs >= roundMs * 4;
+  return elapsedMs >= 30 * 60_000;
 }
 
 export async function writeCollectionBibFiles(

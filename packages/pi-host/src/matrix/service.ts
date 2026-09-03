@@ -239,6 +239,10 @@ export class MatrixService {
   }
 
   async syncNow(_reason: SyncRunReason = "manual"): Promise<MatrixStatusSnapshot> {
+    // Single-flight: at most one sync round is ever executing. A trigger while
+    // a round runs merges into it (same promise, one progress counter) instead
+    // of overlapping rounds — overlapping rounds were the source of progress
+    // counters jumping back and forth.
     if (this.running) return this.running;
     if (!this.auth) {
       throw createHostError("AUTH_REQUIRED", "Sign in to Paper Matrix before syncing");
@@ -260,6 +264,8 @@ export class MatrixService {
         libraryRoot: this.settings.libraryRoot,
         withAbstract: this.settings.withAbstract,
         signal: abortController.signal,
+        pollIntervalMin: this.settings.pollIntervalMin,
+        now: this.options.now,
         hooks: {
           onProgress: (sync, payload) => {
             this.sync = {

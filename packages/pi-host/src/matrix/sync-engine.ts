@@ -15,6 +15,7 @@ import {
   loadSyncState,
   metaChanged,
   moveToTrash,
+  paperBackoffDue,
   paperFileExists,
   readBodyHash,
   rewriteFrontMatter,
@@ -122,8 +123,12 @@ export class MatrixSyncEngine {
     libraryRoot: string;
     withAbstract: boolean;
     signal?: AbortSignal;
+    pollIntervalMin?: number;
+    now?: () => Date;
     hooks: SyncEngineHooks;
   }): Promise<MatrixSyncProgress> {
+    const now = options.now ?? (() => new Date());
+    const pollIntervalMin = options.pollIntervalMin ?? 180;
     const runId = randomUUID();
     const progress: MatrixSyncProgress = {
       ...idleMatrixSyncProgress(),
@@ -170,7 +175,6 @@ export class MatrixSyncEngine {
     const dedupedManifest: PaperMatrixManifest = { ...manifest, items: manifestItems };
     progress.collections = manifest.collections.length;
     progress.items = manifestItems.length;
-    progress.total = manifestItems.length;
     for (const collection of manifest.collections) {
       if (!collection.name) continue;
       await mkdir(resolveLibraryPath(options.libraryRoot, folderDirName(collection.name)), {
@@ -179,6 +183,25 @@ export class MatrixSyncEngine {
     }
 
     const previous = await loadSyncState(options.libraryRoot);
+    // Papers that vanished from the manifest are carried through intermediate
+    // state saves so a mid-run failure never orphans their files; the final
+    // save (after the trash pass) drops them.
+    const carried: Record<string, LocalPaperState> = {};
+    const manifestKeys = new Set(manifestItems.map((item) => item.dedup_key));
+    for (const [dedupKey, state] of Object.entries(previous.items)) {
+      if (!manifestKeys.has(dedupKey)) carried[dedupKey] = state;
+    }
+    const persistState = async (): Promise<void> => {
+      // Per-paper checkpoint (§6.3): every settled item advances the diff
+      // baseline immediately, so one permanently failing paper can never
+      // re-trigger a full-library refetch, and a crash resumes instead of
+      // restarting.
+      await saveSyncState(options.libraryRoot, {
+        generatedAt: manifest.generated_at,
+        collections: manifest.collections,
+        items: { ...carried, ...nextItems },
+      });
+    };
     const occupied = new Set<string>();
     const nextItems: Record<string, LocalPaperState> = {};
     const toFetch: PaperMatrixItem[] = [];
@@ -193,6 +216,13 @@ export class MatrixSyncEngine {
       const old = previous.items[item.dedup_key];
       const mdUpdatedAt = item.asset?.md_updated_at ?? null;
       if (!old || old.mdUpdatedAt !== mdUpdatedAt) {
+        if (old && !paperBackoffDue(old, now(), pollIntervalMin)) {
+          // Repeatedly failing paper in its backoff window: settle it without
+          // a single request this round; the failure bookkeeping stays so the
+          // schedule keeps advancing.
+          nextItems[item.dedup_key] = { ...old, paths };
+          continue;
+        }
         toFetch.push(item);
       } else if (old.paths[0] && !(await paperFileExists(options.libraryRoot, old.paths[0]))) {
         // State says synced but the body file vanished (manual deletion,
@@ -235,14 +265,34 @@ export class MatrixSyncEngine {
         ...itemToLocalState(item, paths, old?.bodyHash ?? null),
         ...(old?.imagesFetched !== undefined ? { imagesFetched: old.imagesFetched } : {}),
       };
-      progress.done += 1;
     }
+    // Persist meta-only refreshes as a checkpoint; a crash here just redoes
+    // local front-matter rewrites next round (no network cost).
+    await persistState();
 
+    // §6.4 target state: total counts only papers that actually need
+    // downloading this round; unchanged/backoff-settled items never enter the
+    // counter, so a no-change round is 0/0 and numbers never jump around.
+    progress.total = toFetch.length + remetaFetch.length;
     emit("fetch");
     await mapPool([...toFetch, ...remetaFetch], 2, async (item) => {
       options.signal?.throwIfAborted();
       const paths = pathPlan.get(item.dedup_key) ?? [];
       const old = previous.items[item.dedup_key];
+      // §6.3: a skipped paper keeps its previous baseline (or a null one when
+      // brand new) — never the server's md_updated_at — so the next round
+      // naturally retries exactly this paper, plus failure bookkeeping so
+      // repeat offenders back off instead of looping.
+      const settlePaperFailure = async (): Promise<void> => {
+        nextItems[item.dedup_key] = {
+          ...(old ? { ...old, paths } : itemToLocalState(item, paths, null)),
+          mdUpdatedAt: null,
+          bodyHash: null,
+          failedSyncs: (old?.failedSyncs ?? 0) + 1,
+          lastFailedAt: now().toISOString(),
+        };
+        await persistState();
+      };
       let body: string | null = null;
       const locallyEdited = await this.hasLocalEdits(options.libraryRoot, old);
       if (locallyEdited) {
@@ -287,18 +337,37 @@ export class MatrixSyncEngine {
           body = await this.fetchMarkdownWithRetry(item.asset.asset_id, options.signal);
         } catch (error) {
           if (error instanceof MatrixHttpError && error.status === 404) {
+            // Server says the Markdown does not exist (yet): write the
+            // placeholder and record the attempt so consecutive misses back
+            // off instead of hammering one request per round forever.
             progress.skipped += 1;
             body = placeholderBody(item);
             const syncedAt = new Date().toISOString();
             for (const relativePath of paths) {
               await writePaper(options.libraryRoot, relativePath, item, body, syncedAt);
             }
-            nextItems[item.dedup_key] = itemToLocalState({ ...item, asset: null }, paths, null);
+            nextItems[item.dedup_key] = {
+              ...itemToLocalState({ ...item, asset: null }, paths, null),
+              failedSyncs: (old?.failedSyncs ?? 0) + 1,
+              lastFailedAt: now().toISOString(),
+            };
             progress.done += 1;
             emit("fetch", item.title);
+            await persistState();
             return;
           }
-          throw error;
+          // Transient/other failure after retries: skip this paper and keep
+          // the run alive — never abort the round (and the baseline) because
+          // one paper is broken.
+          logger.warn("Skipping paper after markdown fetch failures", {
+            dedupKey: item.dedup_key,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          progress.skipped += 1;
+          progress.done += 1;
+          emit("fetch", item.title);
+          await settlePaperFailure();
+          return;
         }
       } else {
         body = placeholderBody(item);
@@ -315,9 +384,9 @@ export class MatrixSyncEngine {
       });
       if (!images.ok) {
         progress.skipped += 1;
-        if (old) nextItems[item.dedup_key] = { ...old, paths };
         progress.done += 1;
         emit("fetch", item.title);
+        await settlePaperFailure();
         return;
       }
       const syncedAt = new Date().toISOString();
@@ -340,6 +409,7 @@ export class MatrixSyncEngine {
       progress.downloaded += 1;
       progress.done += 1;
       emit("fetch", item.title);
+      await persistState();
     });
 
     await mapPool(toImages, 2, async (item) => {
@@ -372,11 +442,11 @@ export class MatrixSyncEngine {
       emit("fetch", item.title);
     });
 
-    const now = new Date();
+    const trashAt = new Date();
     for (const [dedupKey, old] of Object.entries(previous.items)) {
       if (nextItems[dedupKey]) continue;
       for (const relativePath of old.paths) {
-        await moveToTrash(options.libraryRoot, relativePath, now);
+        await moveToTrash(options.libraryRoot, relativePath, trashAt);
       }
     }
 
@@ -449,6 +519,9 @@ export class MatrixSyncEngine {
     }
     try {
       const zip = await this.fetchImagesWithRetry(args.item.asset.asset_id, args.signal);
+      // 200 with an empty body or a valid empty archive: the server has no
+      // images for this asset — a normal result, not a failure.
+      if (zip.length === 0) return { ok: true, zip: null };
       return { ok: true, zip };
     } catch (error) {
       if (error instanceof MatrixHttpError && error.status === 404) return { ok: true, zip: null };
