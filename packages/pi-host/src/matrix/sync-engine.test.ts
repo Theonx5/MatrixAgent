@@ -256,6 +256,82 @@ describe("MatrixSyncEngine", () => {
     expect(state.items["doi:10.1/a"]?.mdUpdatedAt).toBe("2026-01-02T00:00:00Z");
   });
 
+  it("refetches a paper whose file vanished while state said synced", async () => {
+    const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
+    const library = join(root, "library");
+    await seedLibrary(library);
+    const { fetch, calls } = fakeServer({
+      pages: [manifest([paperA])],
+      markdown: { "asset-a": "# A\n" },
+    });
+    const engine = new MatrixSyncEngine(
+      new MatrixApiClient({
+        baseUrl: "https://papermatrix.online",
+        fetch,
+        getToken: () => "tok",
+      }),
+    );
+    await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    // Simulate the paper body vanishing without a server-side change: state
+    // still says synced, so the next run must notice the missing file and
+    // refetch instead of silently keeping the paper gone.
+    const paperPath = join(library, "LLM", "2024 - Paper A.md");
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(paperPath);
+    const mdCallsBefore = calls.filter((call) => call.includes("/md")).length;
+    const second = await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    expect(calls.filter((call) => call.includes("/md")).length).toBeGreaterThan(mdCallsBefore);
+    // Body is restored verbatim; the fresh write carries a new synced_at.
+    expect(readFileSync(paperPath, "utf8")).toContain("# A");
+    expect(second.downloaded).toBe(1);
+  });
+
+  it("handles duplicate dedup keys in the manifest once", async () => {
+    const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
+    const library = join(root, "library");
+    await seedLibrary(library);
+    const duplicate = {
+      ...paperA,
+      title: "Paper A (server duplicate)",
+      folders: ["LLM"],
+    };
+    const { fetch, calls } = fakeServer({
+      pages: [manifest([paperA, duplicate])],
+      markdown: { "asset-a": "# A\n" },
+    });
+    const engine = new MatrixSyncEngine(
+      new MatrixApiClient({
+        baseUrl: "https://papermatrix.online",
+        fetch,
+        getToken: () => "tok",
+      }),
+    );
+    const result = await engine.run({
+      libraryRoot: library,
+      withAbstract: true,
+      hooks: { onProgress: () => undefined },
+    });
+    // The duplicate is dropped before planning: one paper, one download.
+    expect(result.total).toBe(1);
+    expect(result.done).toBe(1);
+    expect(calls.filter((call) => call.includes("/md")).length).toBe(1);
+    const state = JSON.parse(readFileSync(join(library, ".sync", "state.json"), "utf8")) as {
+      items: Record<string, { paths: string[] }>;
+    };
+    expect(Object.keys(state.items)).toEqual(["doi:10.1/a"]);
+    const catalog = readFileSync(join(library, ".sync", "catalog.md"), "utf8");
+    expect(catalog).toContain("Paper A");
+    expect(catalog).not.toContain("server duplicate");
+  });
+
   it("skips a 404 markdown body without updating md_updated_at", async () => {
     const root = mkdtempSync(join(tmpdir(), "matrix-sync-"));
     const library = join(root, "library");

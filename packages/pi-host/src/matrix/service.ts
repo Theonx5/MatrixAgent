@@ -13,7 +13,7 @@ import {
   type MatrixSyncProgress,
 } from "@pideck/protocol";
 import { logger } from "../logger.js";
-import { matrixLibraryRoot } from "../pideck-data.js";
+import { isExternalPiAgentDir, matrixLibraryRoot } from "../pideck-data.js";
 import {
   DEFAULT_MATRIX_BASE_URL,
   MatrixApiClient,
@@ -56,8 +56,11 @@ export class MatrixService {
   private auth: MatrixAuthRecord | null = null;
   private lastError: string | null = null;
   private authRequired = false;
+  private lastSyncAt: string | null = null;
   private sync: MatrixSyncProgress;
   private running: Promise<MatrixStatusSnapshot> | null = null;
+  private backgroundSync: Promise<unknown> | null = null;
+  private abortController: AbortController | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = 0;
   private stopped = false;
@@ -108,6 +111,10 @@ export class MatrixService {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    // A sync in flight during shutdown must not keep writing into the library
+    // after the Host stops consuming its output. Atomic file writes keep the
+    // interrupted state resumable; the next run redoes the phase.
+    this.abortController?.abort();
   }
 
   status(): MatrixStatusSnapshot {
@@ -181,7 +188,12 @@ export class MatrixService {
       this.lastError = null;
       await this.store.saveAuth(this.auth);
       this.emitStatus();
-      void this.syncNow("startup");
+      // Fire-and-forget, but the rejection MUST be captured: the Host treats an
+      // unhandled rejection as fatal. A failed post-login sync (offline, 5xx)
+      // must degrade to lastError + authRequired, never fault the Host.
+      this.backgroundSync = this.syncNow("startup").catch((error: unknown) => {
+        logger.warn("Post-login Paper Matrix sync failed", { error: errorMessage(error) });
+      });
       return this.status();
     } catch (error) {
       this.lastError = errorMessage(error);
@@ -207,6 +219,12 @@ export class MatrixService {
   }): Promise<MatrixStatusSnapshot> {
     const next = { ...this.settings };
     if (patch.libraryRoot) {
+      if (isExternalPiAgentDir(patch.libraryRoot)) {
+        throw createHostError(
+          "INVALID_REQUEST",
+          "Library root cannot be inside the Pi CLI directory (~/.pi/agent)",
+        );
+      }
       next.libraryRoot = resolve(patch.libraryRoot);
       await mkdir(next.libraryRoot, { recursive: true });
       await seedLibrary(next.libraryRoot);
@@ -234,13 +252,14 @@ export class MatrixService {
     }
   }
 
-  private lastSyncAt: string | null = null;
-
   private async runSync(): Promise<MatrixStatusSnapshot> {
+    const abortController = new AbortController();
+    this.abortController = abortController;
     try {
       const result = await this.engine.run({
         libraryRoot: this.settings.libraryRoot,
         withAbstract: this.settings.withAbstract,
+        signal: abortController.signal,
         hooks: {
           onProgress: (sync, payload) => {
             this.sync = {
@@ -287,6 +306,8 @@ export class MatrixService {
       this.emitStatus();
       this.armTimer();
       throw createHostError("INTERNAL_ERROR", this.lastError, { retryable: true });
+    } finally {
+      if (this.abortController === abortController) this.abortController = null;
     }
   }
 

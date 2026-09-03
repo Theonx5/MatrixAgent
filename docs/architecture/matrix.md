@@ -61,7 +61,10 @@ parsed figures, per-collection `<folder>.bib` files at the library root,
 Manifest requests use `with_abstract=1&with_bibtex=1&with_images=1`. Image zips
 are fetched only when `md_updated_at` changes and the manifest lists files.
 Synced paper bodies are server-authoritative; local edits are not overwritten
-and the incoming copy is written under `reviews/conflicts/`.
+and the incoming copy is written under `reviews/conflicts/`. A paper whose body
+vanished on disk while its sync state said current is refetched on the next run,
+and manifest items with duplicate `dedup_key` values are processed once (first
+wins) so a server-side duplicate cannot clobber another paper's state.
 
 ## Auth
 

@@ -3,13 +3,19 @@ import { mkdir } from "node:fs/promises";
 import type { MatrixProgressPayload, MatrixSyncProgress } from "@pideck/protocol";
 import { idleMatrixSyncProgress } from "@pideck/protocol";
 import { logger } from "../logger.js";
-import { MatrixHttpError, type MatrixApiClient, type PaperMatrixItem } from "./client.js";
+import {
+  MatrixHttpError,
+  type MatrixApiClient,
+  type PaperMatrixItem,
+  type PaperMatrixManifest,
+} from "./client.js";
 import {
   allocatePaths,
   itemToLocalState,
   loadSyncState,
   metaChanged,
   moveToTrash,
+  paperFileExists,
   readBodyHash,
   rewriteFrontMatter,
   saveSyncState,
@@ -52,16 +58,15 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 async function mapPool<T>(
-  items: T[],
+  items: readonly T[],
   concurrency: number,
   worker: (item: T) => Promise<void>,
 ): Promise<void> {
   if (items.length === 0) return;
-  const pending = [...items];
-  const runners = Array.from({ length: Math.min(concurrency, pending.length) }, async () => {
-    while (pending.length > 0) {
-      const item = pending.shift();
-      if (!item) return;
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++]!;
       await worker(item);
     }
   });
@@ -79,7 +84,10 @@ function shouldFetchImages(item: PaperMatrixItem, extraNames: string[] = []): bo
   return files.length > 0 || total > 0 || extraNames.length > 0;
 }
 
-function listedImageFiles(item: PaperMatrixItem, extraNames: string[] = []): Array<{ name: string }> {
+function listedImageFiles(
+  item: PaperMatrixItem,
+  extraNames: string[] = [],
+): Array<{ name: string }> {
   const names = new Set<string>();
   for (const file of item.asset?.images?.files ?? []) names.add(file.name);
   for (const name of extraNames) names.add(name);
@@ -145,6 +153,24 @@ export class MatrixSyncEngine {
     progress.items = manifest.items.length;
     progress.total = manifest.items.length;
     emit("diff");
+    // Duplicate dedup_keys (a server bug, or two untitleable papers falling
+    // back to `title:` keys) must not compete: the later one would steal the
+    // path plan and clobber the earlier one's sync state.
+    const seenKeys = new Set<string>();
+    const manifestItems: PaperMatrixItem[] = [];
+    for (const item of manifest.items) {
+      if (!item.dedup_key) continue;
+      if (seenKeys.has(item.dedup_key)) {
+        logger.warn("Skipping duplicate manifest item", { dedupKey: item.dedup_key });
+        continue;
+      }
+      seenKeys.add(item.dedup_key);
+      manifestItems.push(item);
+    }
+    const dedupedManifest: PaperMatrixManifest = { ...manifest, items: manifestItems };
+    progress.collections = manifest.collections.length;
+    progress.items = manifestItems.length;
+    progress.total = manifestItems.length;
     for (const collection of manifest.collections) {
       if (!collection.name) continue;
       await mkdir(resolveLibraryPath(options.libraryRoot, folderDirName(collection.name)), {
@@ -160,13 +186,18 @@ export class MatrixSyncEngine {
     const toImages: PaperMatrixItem[] = [];
     const pathPlan = new Map<string, string[]>();
 
-    for (const item of manifest.items) {
+    for (const item of manifestItems) {
       if (!item.dedup_key) continue;
       const paths = allocatePaths(item, occupied);
       pathPlan.set(item.dedup_key, paths);
       const old = previous.items[item.dedup_key];
       const mdUpdatedAt = item.asset?.md_updated_at ?? null;
       if (!old || old.mdUpdatedAt !== mdUpdatedAt) {
+        toFetch.push(item);
+      } else if (old.paths[0] && !(await paperFileExists(options.libraryRoot, old.paths[0]))) {
+        // State says synced but the body file vanished (manual deletion,
+        // interrupted sync). Refetch instead of silently staying missing —
+        // this branch is what runs when metadata is unchanged.
         toFetch.push(item);
       } else {
         if (metaChanged(old, item)) toMeta.push(item);
@@ -175,8 +206,40 @@ export class MatrixSyncEngine {
       }
     }
 
+    // Meta-only refresh runs BEFORE the fetch pool: a paper entry whose file
+    // vanished from disk (state said synced) is discovered here and must land
+    // in the same fetch pool — pushing to toFetch after it already drained
+    // would silently leave the paper missing until md_updated_at changes.
+    const remetaFetch: PaperMatrixItem[] = [];
+    for (const item of toMeta) {
+      const paths = pathPlan.get(item.dedup_key) ?? [];
+      const old = previous.items[item.dedup_key];
+      let missing = false;
+      for (const relativePath of paths) {
+        try {
+          const syncedAt = new Date().toISOString();
+          await rewriteFrontMatter(options.libraryRoot, relativePath, item, syncedAt);
+        } catch (error) {
+          if (errnoCode(error) === "ENOENT") {
+            missing = true;
+            continue;
+          }
+          throw error;
+        }
+      }
+      if (missing) {
+        remetaFetch.push(item);
+        continue;
+      }
+      nextItems[item.dedup_key] = {
+        ...itemToLocalState(item, paths, old?.bodyHash ?? null),
+        ...(old?.imagesFetched !== undefined ? { imagesFetched: old.imagesFetched } : {}),
+      };
+      progress.done += 1;
+    }
+
     emit("fetch");
-    await mapPool(toFetch, 2, async (item) => {
+    await mapPool([...toFetch, ...remetaFetch], 2, async (item) => {
       options.signal?.throwIfAborted();
       const paths = pathPlan.get(item.dedup_key) ?? [];
       const old = previous.items[item.dedup_key];
@@ -279,36 +342,12 @@ export class MatrixSyncEngine {
       emit("fetch", item.title);
     });
 
-    for (const item of toMeta) {
-      const paths = pathPlan.get(item.dedup_key) ?? [];
-      const old = previous.items[item.dedup_key];
-      const syncedAt = new Date().toISOString();
-      for (const relativePath of paths) {
-        try {
-          await rewriteFrontMatter(options.libraryRoot, relativePath, item, syncedAt);
-        } catch (error) {
-          if (errnoCode(error) === "ENOENT" && item.asset) {
-            toFetch.push(item);
-            continue;
-          }
-          throw error;
-        }
-      }
-      nextItems[item.dedup_key] = {
-        ...itemToLocalState(item, paths, old?.bodyHash ?? null),
-        ...(old?.imagesFetched !== undefined ? { imagesFetched: old.imagesFetched } : {}),
-      };
-      progress.done += 1;
-    }
-
     await mapPool(toImages, 2, async (item) => {
       options.signal?.throwIfAborted();
       const paths = pathPlan.get(item.dedup_key) ?? [];
       const current = nextItems[item.dedup_key];
       if (!current) return;
-      const extraNames = paths[0]
-        ? await listedLocalImageNames(options.libraryRoot, paths[0])
-        : [];
+      const extraNames = paths[0] ? await listedLocalImageNames(options.libraryRoot, paths[0]) : [];
       const files = listedImageFiles(item, extraNames);
       if (!paths[0] || !(await paperImagesNeedSync(options.libraryRoot, paths[0], files))) {
         nextItems[item.dedup_key] = { ...current, imagesFetched: true };
@@ -347,8 +386,8 @@ export class MatrixSyncEngine {
       collections: manifest.collections,
       items: nextItems,
     };
-    await writeIndex(options.libraryRoot, manifest, nextItems);
-    await writeCollectionBibFiles(options.libraryRoot, manifest.items);
+    await writeIndex(options.libraryRoot, dedupedManifest, nextItems);
+    await writeCollectionBibFiles(options.libraryRoot, manifestItems);
     await saveSyncState(options.libraryRoot, nextState);
     progress.running = false;
     progress.phase = "idle";

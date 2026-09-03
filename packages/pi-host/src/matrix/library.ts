@@ -265,6 +265,17 @@ export function allocatePaths(item: PaperMatrixItem, occupied: Set<string>): str
   return folders.map((folder) => paperRelativePath(folder, item, occupied));
 }
 
+/** Cheap existence probe for one synced paper body (ENOENT → false). */
+export async function paperFileExists(libraryRoot: string, relativePath: string): Promise<boolean> {
+  try {
+    await stat(resolveLibraryPath(libraryRoot, relativePath));
+    return true;
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return false;
+    throw error;
+  }
+}
+
 export async function readBodyHash(
   libraryRoot: string,
   relativePath: string,
