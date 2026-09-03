@@ -21,8 +21,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  meta:
+    name: Release channel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      dual: ${{ steps.decide.outputs.dual }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - name: Decide dual-platform vs Windows-only
+        id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="${RELEASE_TAG#v}"
+          # Previous version tag by semver order (ignores the tag being built).
+          previous_tag="$(git tag --sort=-v:refname 'v*' | grep -v "^${RELEASE_TAG}$" | head -1 || true)"
+          previous="${previous_tag#v}"
+          if [[ -z "$previous" ]]; then
+            echo "No previous version tag found — treating as a major release."
+            echo "dual=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          current_minor="${current%.*}"
+          previous_minor="${previous%.*}"
+          if [[ "$current_minor" != "$previous_minor" ]]; then
+            echo "${current} changes major.minor vs ${previous} — dual-platform CI build."
+            echo "dual=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${current} is a patch over ${previous} — Windows-only local release; CI build skipped."
+            echo "dual=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-release:
     name: Build ${{ matrix.label }}
+    needs: meta
+    if: needs.meta.outputs.dual == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -221,7 +260,8 @@ jobs:
 
   create-release:
     name: Create draft release
-    needs: build-release
+    needs: [meta, build-release]
+    if: ${{ !cancelled() && needs.meta.outputs.dual == 'true' && needs.build-release.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -261,7 +301,8 @@ jobs:
 
   publish-to-server:
     name: Publish updater feed to papermatrix.online
-    needs: create-release
+    needs: [meta, create-release]
+    if: ${{ !cancelled() && needs.meta.outputs.dual == 'true' && needs.create-release.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:

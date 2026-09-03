@@ -25,6 +25,7 @@
     "verify:fixtures": "node scripts/scan-pi-agent-fixtures.mjs",
     "test:rust": "node scripts/prepare-rust-test-resources.mjs && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir apps/desktop/src-tauri/target/verify-rust",
     "package:release": "node scripts/package-release.mjs",
+    "release:local": "node scripts/publish-local.mjs",
     "sign:windows": "node scripts/windows-sign.mjs",
     "verify:quick": "pnpm verify:docs && pnpm verify:fixtures && pnpm verify:release-metadata && pnpm lint && pnpm typecheck && pnpm test",
     "verify:p0": "pnpm verify:quick && pnpm build && pnpm test:rust && pnpm lint:rust",

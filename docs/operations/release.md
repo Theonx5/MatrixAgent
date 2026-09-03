@@ -96,6 +96,12 @@ overrides SSH port 22 (for example an frp mapping).
 
 ## Tracked Draft-Release Workflow
 
+Release runs are two-track. The `meta` job compares the release tag against
+the previous version tag: when `major.minor` changes (0.2.x → 0.3.0, 1.x) it
+sets `dual=true` and the CI workflow builds both platforms; patch tags set
+`dual=false`, skip the whole CI workflow, and are released from the release
+machine instead (see "Local Windows-only release" below).
+
 `.github/workflows/release.yml` checks out the release tag and records
 `git rev-parse HEAD`. The Windows job runs `pnpm verify:p0` on that
 revision (the same source gate as pull-request CI). macOS jobs run
@@ -109,6 +115,23 @@ to the same HEAD. It fails closed if HEAD does not match, unexpected
 source files changed, or the JavaScript build outputs are missing. The
 resulting `PACKAGE_RELEASE.json` records `sourceCommit` and
 `reusedSourceBuildCommit`.
+
+## Local Windows-only release (patch versions)
+
+Patch releases skip CI. On the Windows release machine (updater key at
+`apps/desktop/src-tauri/.tauri-updater.key`, Python 3, an SSH key authorized
+on the deploy server, and `DEPLOY_SERVER_HOST` / `DEPLOY_SERVER_USER` /
+`DEPLOY_DIST_DIR` env vars or the equivalent flags):
+
+    pnpm release:local --tag vX.Y.Z --notes "..."
+
+The script builds the NSIS installer with the tag-injected version, stages the
+updater bundle, assembles `artifacts/release-dist` via `scripts/publish.py`,
+merges the live macOS platform entry so macOS clients keep their current
+update channel, uploads `latest.json` and the new version directory over
+SSH (additive only — old version directories are never deleted), and
+self-checks the published feed. Without Authenticode env vars the installer
+is unsigned (the updater's minisign chain is unaffected).
 
 This automation produces development candidates and, when deploy secrets are
 set, publishes the updater feed to papermatrix.online. It does not replace
