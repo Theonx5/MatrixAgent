@@ -121,8 +121,9 @@ describe("HostSettings", () => {
 
     await user.click(screen.getByRole("button", { name: "Download and restart" }));
     expect(install).toHaveBeenCalledTimes(1);
-    // A failed install keeps the update offer instead of losing it.
-    expect(await screen.findByRole("button", { name: "Download and restart" })).toBeEnabled();
+    // A failed install closes the update flow instead of reopening the global
+    // prompt; the user can explicitly check again from Host settings.
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeEnabled();
     expect(
       useAppStore
         .getState()
@@ -177,7 +178,7 @@ describe("HostSettings", () => {
     await act(async () => {
       rejectInstall(new Error("network gone"));
     });
-    expect(await screen.findByRole("button", { name: "Download and restart" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeEnabled();
   });
 
   it("surfaces a failed update check as a notification and stays retryable", async () => {

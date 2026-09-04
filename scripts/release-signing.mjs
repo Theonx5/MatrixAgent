@@ -4,8 +4,9 @@
  * - Windows Authenticode via signtool + a local or provided certificate
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const UPDATER_KEY_REL = "apps/desktop/src-tauri/.tauri-updater.key";
 const DEV_CERT_SUBJECT = "CN=PaperMatrix";
@@ -31,6 +32,70 @@ export function applyUpdaterSigningEnv(root, env = process.env) {
     env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "";
   }
   return { applied: true, source: keyPath };
+}
+
+/**
+ * Re-sign the final Windows installer for the Tauri updater.
+ *
+ * Authenticode changes the PE bytes, so the minisign produced by
+ * `tauri build` is no longer valid after the installer is code-signed.
+ * Keep this operation in one helper so local packaging and SignPath use the
+ * same final-byte signing rule.
+ */
+export function signUpdaterBundle(installerPath, root, run = spawnSync) {
+  if (!existsSync(installerPath)) {
+    throw new Error(`cannot sign missing updater installer: ${installerPath}`);
+  }
+  const tauriCli = join(root, "apps/desktop/node_modules/@tauri-apps/cli/tauri.js");
+  if (!existsSync(tauriCli)) {
+    throw new Error("local Tauri CLI is missing; run pnpm install --frozen-lockfile");
+  }
+
+  // `tauri signer sign` accepts a literal key path more reliably than the
+  // environment variable form across CLI versions. Prefer the gitignored
+  // local key; in CI, materialize the secret only for the child process.
+  const configuredKeyPath = join(root, UPDATER_KEY_REL);
+  let temporaryKeyDir = null;
+  let keyPath = configuredKeyPath;
+  if (!existsSync(keyPath)) {
+    const privateKey = process.env.TAURI_SIGNING_PRIVATE_KEY?.trim();
+    if (privateKey) {
+      temporaryKeyDir = mkdtempSync(join(tmpdir(), "pideck-updater-key-"));
+      keyPath = join(temporaryKeyDir, "key");
+      writeFileSync(keyPath, privateKey, { encoding: "utf8", mode: 0o600 });
+    }
+  }
+  if (!existsSync(keyPath)) {
+    throw new Error("Tauri updater private key is missing");
+  }
+
+  try {
+    const signerArgs = [tauriCli, "signer", "sign", "--private-key-path", keyPath];
+    if (process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD !== undefined) {
+      // Passing an empty value explicitly prevents the CLI from opening an
+      // interactive password prompt for a key intentionally configured with
+      // an empty password.
+      signerArgs.push("--password", process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD);
+    }
+    signerArgs.push(installerPath);
+    const result = run(process.execPath, signerArgs, {
+      cwd: join(root, "apps/desktop"),
+      stdio: "inherit",
+      shell: false,
+      env: process.env,
+    });
+    if (result.status !== 0) {
+      throw new Error(`tauri signer sign failed for ${installerPath}`);
+    }
+  } finally {
+    if (temporaryKeyDir) rmSync(temporaryKeyDir, { recursive: true, force: true });
+  }
+
+  const signaturePath = `${installerPath}.sig`;
+  if (!existsSync(signaturePath) || readFileSync(signaturePath, "utf8").trim() === "") {
+    throw new Error(`updater signature missing after signing: ${signaturePath}`);
+  }
+  return signaturePath;
 }
 
 function findSignTool() {
@@ -83,16 +148,20 @@ function importWindowsPfx(certificateBase64, password) {
   ]);
   if (result.status !== 0) {
     throw new Error(
-      `Could not import WINDOWS_CERTIFICATE PFX: ${
-        (result.stderr || result.stdout || `exit ${result.status}`).trim()
-      }`,
+      `Could not import WINDOWS_CERTIFICATE PFX: ${(
+        result.stderr ||
+        result.stdout ||
+        `exit ${result.status}`
+      ).trim()}`,
     );
   }
   const thumbprint = readThumbprint(
     result.stdout,
-    `WINDOWS_CERTIFICATE PFX import did not return a thumbprint: ${
-      (result.stderr || result.stdout || "").trim()
-    }`,
+    `WINDOWS_CERTIFICATE PFX import did not return a thumbprint: ${(
+      result.stderr ||
+      result.stdout ||
+      ""
+    ).trim()}`,
   );
   return { thumbprint, created: false, subject: thumbprint, kind: "pfx" };
 }

@@ -96,7 +96,10 @@ export function HostSettings() {
         );
       });
     } catch (err) {
-      setUpdatePhase({ state: "available", update });
+      // Do not reopen the global update modal after a failed install. The
+      // notification keeps the error visible and the user can explicitly
+      // check again from Host settings.
+      setUpdatePhase({ state: "idle" });
       pushNotification(
         err instanceof Error
           ? `${t("notifUpdateInstallFailed")}: ${err.message}`

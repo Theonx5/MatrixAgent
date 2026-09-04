@@ -25,6 +25,7 @@ import {
   applyUpdaterSigningEnv,
   ensureWindowsCodeSigningCert,
   signWindowsPe,
+  signUpdaterBundle,
   verifyWindowsPe,
 } from "./release-signing.mjs";
 import { releaseVersionFromEnv, tauriVersionCliArgs } from "./release-version.mjs";
@@ -393,6 +394,17 @@ if (process.env.PIDECK_SKIP_WINDOWS_AUTHENTICODE === "1") {
     };
   }
 }
+let updaterSignaturePath = null;
+let updaterSignatureError = null;
+if (installer && existsSync(installer) && updaterSigning.applied) {
+  try {
+    updaterSignaturePath = timedStage("re-sign Tauri updater bundle", () =>
+      signUpdaterBundle(installer, root),
+    );
+  } catch (error) {
+    updaterSignatureError = error instanceof Error ? error.message : String(error);
+  }
+}
 const packagedRuntimeErrors = timedStage("validate packaged runtime", () =>
   validatePackagedRuntime(bundleRoot, resourceManifestProof.manifest),
 );
@@ -426,7 +438,8 @@ if (
   !sourceInstallerIntegrity?.ok ||
   !installerFresh ||
   !desktopFresh ||
-  packagedRuntimeErrors.length > 0
+  packagedRuntimeErrors.length > 0 ||
+  (updaterSigning.applied && (!updaterSignaturePath || Boolean(updaterSignatureError)))
 ) {
   writeManifest({
     status: "failed",
@@ -447,6 +460,8 @@ if (
     sourceInstallerIntegrity,
     desktopFresh,
     packagedRuntimeErrors,
+    updaterSignaturePath,
+    updaterSignatureError,
     authenticode,
   });
   console.error(
@@ -455,7 +470,10 @@ if (
       ? packagedRuntimeErrors.join("; ")
       : sourceInstallerIntegrity && !sourceInstallerIntegrity.ok
         ? sourceInstallerIntegrity.errors.join("; ")
-        : "no fresh primary NSIS installer",
+        : updaterSignatureError ||
+          (updaterSigning.applied
+            ? "Tauri updater signature was not regenerated for the final installer"
+            : "no fresh primary NSIS installer"),
   );
   process.exit(1);
 }
@@ -552,6 +570,8 @@ const manifest = writeManifest({
   desktopFresh,
   packagedRuntimeValidated: true,
   packagedRuntimeErrors,
+  updaterSignaturePath,
+  updaterSignatureError,
   authenticode,
   resourceManifestPath: resourceManifestProof.path,
   resourceManifestSha256: resourceManifestProof.sha256,

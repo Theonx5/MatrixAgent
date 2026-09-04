@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ensureWindowsCodeSigningCert } from "./release-signing.mjs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ensureWindowsCodeSigningCert, signUpdaterBundle } from "./release-signing.mjs";
 
 function withEnv(values, fn) {
   const previous = {};
@@ -37,6 +40,31 @@ test("uses a provided Authenticode thumbprint", () => {
       });
     },
   );
+});
+
+test("re-signs the updater bundle and requires a non-empty signature", () => {
+  const root = mkdtempSync(join(tmpdir(), "updater-sign-"));
+  const cli = join(root, "apps", "desktop", "node_modules", "@tauri-apps", "cli");
+  mkdirSync(cli, { recursive: true });
+  const installer = join(root, "PaperMatrix_0.2.8_x64-setup.exe");
+  writeFileSync(installer, "final Authenticode-signed bytes");
+  writeFileSync(join(cli, "tauri.js"), "placeholder");
+  const keyPath = join(root, "apps", "desktop", "src-tauri", ".tauri-updater.key");
+  mkdirSync(join(root, "apps", "desktop", "src-tauri"), { recursive: true });
+  writeFileSync(keyPath, "test private key");
+
+  let signerArgs;
+  const signaturePath = withEnv({ TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "" }, () =>
+    signUpdaterBundle(installer, root, (_command, args) => {
+      signerArgs = args;
+      writeFileSync(`${args.at(-1)}.sig`, "minisign signature for final bytes\n");
+      return { status: 0 };
+    }),
+  );
+
+  assert.equal(signerArgs.at(-2), "");
+  assert.equal(signaturePath, `${installer}.sig`);
+  assert.equal(readFileSync(signaturePath, "utf8"), "minisign signature for final bytes\n");
 });
 
 test("rejects a partial Windows PFX secret pair", () => {

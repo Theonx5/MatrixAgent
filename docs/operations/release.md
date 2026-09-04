@@ -24,8 +24,11 @@ pnpm package:release
 
 `package:release` prepares and validates the bundled runtime, builds the
 frontend and Tauri application, creates an NSIS installer, and applies the
-repository's Windows installer-integrity checks. It writes candidate evidence
-under `artifacts/p0/release-latest/`.
+repository's Windows installer-integrity checks. If Authenticode is applied,
+it re-signs the final installer with the Tauri updater key afterward;
+Authenticode changes the PE bytes and would otherwise invalidate the updater
+minisign signature. It writes candidate evidence under
+`artifacts/p0/release-latest/`.
 
 The candidate contains:
 
@@ -149,7 +152,8 @@ Three signing layers are involved:
 
 1. **Tauri updater (minisign).** `pnpm package:release` loads
    `TAURI_SIGNING_PRIVATE_KEY` or `apps/desktop/src-tauri/.tauri-updater.key`
-   (gitignored). The matching public key is `plugins.updater.pubkey` in
+   (gitignored), then signs the final Windows installer after any
+   Authenticode mutation. The matching public key is `plugins.updater.pubkey` in
    `apps/desktop/src-tauri/tauri.conf.json`. Installed apps poll
    `https://papermatrix.online/api/updates/matrix-agent/latest.json`.
    Losing the private key breaks update verification for installed apps.

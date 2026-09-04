@@ -48,7 +48,10 @@ export function AppUpdatePrompt() {
         );
       });
     } catch (error) {
-      setPhase({ state: "available", update: next });
+      // A failed install must close the modal. Keeping `available` here
+      // reopens the global prompt immediately after the error notification
+      // and makes the app appear stuck in the update flow.
+      setPhase({ state: "idle" });
       pushNotification(
         error instanceof Error
           ? `${t("notifUpdateInstallFailed")}: ${error.message}`

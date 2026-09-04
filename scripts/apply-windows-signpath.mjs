@@ -2,7 +2,6 @@
  * Replace the unsigned Windows installer with a SignPath-signed copy, then
  * re-create the Tauri updater minisign so hashes and .sig still match.
  */
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -14,6 +13,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { signUpdaterBundle } from "./release-signing.mjs";
 
 function fail(message) {
   throw new Error(`[apply-windows-signpath] ${message}`);
@@ -46,12 +46,9 @@ export function replaceInstallerCopy(source, destination) {
   copyFileSync(source, destination);
 }
 
-export function applySignedWindowsInstaller({
-  packageManifestPath,
-  signedDir,
-  signUpdater,
-}) {
-  if (!existsSync(packageManifestPath)) fail(`PACKAGE_RELEASE.json missing: ${packageManifestPath}`);
+export function applySignedWindowsInstaller({ packageManifestPath, signedDir, signUpdater }) {
+  if (!existsSync(packageManifestPath))
+    fail(`PACKAGE_RELEASE.json missing: ${packageManifestPath}`);
   const manifest = JSON.parse(readFileSync(packageManifestPath, "utf8"));
   if (manifest.status !== "ok") fail(`refusing a ${manifest.status} package:release run`);
   const sourceInstaller = manifest.sourceInstaller;
@@ -67,7 +64,8 @@ export function applySignedWindowsInstaller({
     fail(`updater signature missing after resigning: ${signaturePath}`);
   }
   const hash = sha256File(acceptedInstaller);
-  if (sha256File(sourceInstaller) !== hash) fail("signed source and accepted installer hashes differ");
+  if (sha256File(sourceInstaller) !== hash)
+    fail("signed source and accepted installer hashes differ");
   const next = {
     ...manifest,
     primaryInstallerSha256: hash,
@@ -85,16 +83,10 @@ export function applySignedWindowsInstaller({
 }
 
 function defaultSignUpdater(installerPath, root) {
-  const tauriCli = join(root, "apps/desktop/node_modules/@tauri-apps/cli/tauri.js");
-  if (!existsSync(tauriCli)) fail("local Tauri CLI is missing; run pnpm install --frozen-lockfile");
-  const result = spawnSync(process.execPath, [tauriCli, "signer", "sign", installerPath], {
-    cwd: join(root, "apps/desktop"),
-    stdio: "inherit",
-    shell: false,
-    env: process.env,
-  });
-  if (result.status !== 0) {
-    fail(`tauri signer sign failed for ${installerPath}`);
+  try {
+    signUpdaterBundle(installerPath, root);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
 }
 
