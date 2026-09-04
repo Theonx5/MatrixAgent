@@ -18,7 +18,7 @@ PaperMatrix / Matrix Agent 是基于 [Pi Coding Agent](https://www.npmjs.com/pac
 | `packages/pi-host` | Node sidecar | 业务逻辑层：Pi SDK、会话/包/Provider，以及 Paper Matrix 文献库同步 |
 | `apps/desktop` | React 19 + Vite + Tauri 2 (Rust) | 界面与桌面宿主 |
 
-默认用户数据在 Windows 安装目录 `agent\` 子目录（开发构建或安装目录不可写时回退 `~/.MatrixAgent`；旧版 `~/.MatrixAgent` 数据首次启动自动迁移）。默认文献库是 `<agentDir>/library`，随 agent 目录一起位于安装路径。
+默认用户数据在 Windows 安装目录 `agent\` 子目录（开发构建或安装目录不可写时回退 `~/.MatrixAgent`；旧版 `~/.MatrixAgent` 与旧安装目录残留的 `agent\` 数据会在首次启动自动迁移——目标目录只含种子文件时会让位接管，含真实数据时则保持不动）。启动时会清理指向已消失旧默认文献库的工作区记录，避免重装后出现重复的 library 工作区。默认文献库是 `<agentDir>/library`，随 agent 目录一起位于安装路径。
 Windows 安装身份是 `online.papermatrix.matrix-agent` / `PaperMatrix.exe`。
 卸载不会删除 Pi CLI 的 `~/.pi`，也不会删除 pideck 命名的文件；agent 数据目录仅在勾选 Delete application data 时随卸载删除。不要指向 `~/.pi/agent`。
 

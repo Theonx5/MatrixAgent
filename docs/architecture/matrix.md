@@ -45,15 +45,24 @@ next to the installed executable (the installer is per-user, so the directory is
 writable without elevation). Development builds and installs whose directory is
 not writable fall back to `~/.MatrixAgent`; an existing `~/.MatrixAgent` is
 moved into the install-directory agent dir once on first launch, and recorded
-workspaces follow the move. The agent directory stays isolated from the Pi
-CLI's `~/.pi/agent`. Leftover Desktop settings that still point at the CLI
-directory are rewritten silently: Matrix Agent forgets that agent dir and any
-workspaces recorded while sharing it, then first-run uses the Matrix library
-instead of a Pi CLI project. The Host child does not inherit `PI_*`
-environment variables (they are scrubbed, then `PI_CODING_AGENT_DIR` is pinned
-to the agent dir). The default library root is `<agentDir>/library`. A previous
-Windows default at `<installDir>/library` is relocated into the agent dir so
-upgrades keep papers. The Windows app identity is
+workspaces follow the move. The same adoption covers the `agent\` directory an
+uninstalled previous install left behind: when the active workspace still names
+`<oldInstall>\agent\library`, that agent dir (sessions, credentials, library)
+is moved into the current install's agent dir. If the target agent dir already
+exists, it is only taken over when it is a contentless stub (freshly-seeded
+library, no sessions, no credentials) left by a brief trial install that was
+uninstalled; when both sides hold real data nothing is moved. Recorded
+workspaces that name a previous default library which no longer exists on disk
+are dropped at startup so reinstalling to a new directory never accumulates
+duplicate `library` entries in the workspace list. The agent directory stays
+isolated from the Pi CLI's `~/.pi/agent`. Leftover Desktop settings that still
+point at the CLI directory are rewritten silently: Matrix Agent forgets that
+agent dir and any workspaces recorded while sharing it, then first-run uses the
+Matrix library instead of a Pi CLI project. The Host child does not inherit
+`PI_*` environment variables (they are scrubbed, then `PI_CODING_AGENT_DIR` is
+pinned to the agent dir). The default library root is `<agentDir>/library`. A
+previous Windows default at `<installDir>/library` is relocated into the agent
+dir so upgrades keep papers. The Windows app identity is
 `online.papermatrix.matrix-agent` / `PaperMatrix.exe`. Uninstall never removes
 `%USERPROFILE%\.pi`, leftover `com.skitre.pideck` AppData, or other
 PiDeck-named files; the agent data directory is removed by uninstall only when

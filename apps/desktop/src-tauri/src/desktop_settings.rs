@@ -370,7 +370,11 @@ impl DesktopSettingsStore {
     pub fn ensure_default_project_workspace(&mut self) -> Result<Option<PathBuf>, String> {
         let agent_dir = self.resolved_agent_dir();
         self.migrate_legacy_home_agent_dir(&agent_dir)?;
+        self.migrate_stale_default_agent_dir(&agent_dir)?;
         let project_dir = default_library_dir(&agent_dir);
+        if purge_dead_previous_default_workspaces(&mut self.settings, &agent_dir) {
+            self.write_settings(&self.settings)?;
+        }
         let install_library = packaged_library_dir();
         let current = first_configured_workspace(&self.settings);
         let using_install_default = current.as_ref().is_some_and(|path| {
@@ -488,7 +492,40 @@ impl DesktopSettingsStore {
         let legacy = legacy_home_agent_dir();
         let effective = agent_dir.to_path_buf();
         let mut next = self.settings.clone();
-        let migrated = migrate_legacy_home_agent_dir_to(&mut next, &effective, &legacy, &|next| {
+        let migrated = migrate_agent_dir_into(&mut next, &effective, &legacy, &|next| {
+            self.write_settings(next)
+        })?;
+        if migrated {
+            self.settings = next;
+        }
+        Ok(())
+    }
+
+    /// One-time adoption of a previous install's agent directory. Older
+    /// releases kept user data next to their own installed binary, so a
+    /// workspace recorded by such a release names `<oldInstall>\agent\library`.
+    /// When the active workspace still names that layout, move the previous
+    /// agent dir (sessions, credentials, library) into this install's agent
+    /// dir so the data follows the app instead of lingering as a second
+    /// workspace. Custom agent dirs are never relocated.
+    fn migrate_stale_default_agent_dir(&mut self, effective: &Path) -> Result<(), String> {
+        let Some(install) = packaged_install_dir() else {
+            return Ok(());
+        };
+        let default_target = default_matrix_agent_dir_for(Some(&install), None);
+        if !same_path(effective, &default_target) {
+            // Home-directory fallback or a custom agent dir — no install
+            // layout to adopt into.
+            return Ok(());
+        }
+        if !install_agent_dir_writable(&install) {
+            return Ok(());
+        }
+        let Some(previous) = previous_agent_dir_from_workspace(&self.settings, effective) else {
+            return Ok(());
+        };
+        let mut next = self.settings.clone();
+        let migrated = migrate_agent_dir_into(&mut next, effective, &previous, &|next| {
             self.write_settings(next)
         })?;
         if migrated {
@@ -587,34 +624,59 @@ fn legacy_home_agent_dir() -> PathBuf {
     default_matrix_agent_dir_for(None, None)
 }
 
-/// One-time adoption: move a legacy `~/.MatrixAgent` into the install-directory
-/// agent dir. Runs before the Host is spawned; refuses to clobber a target that
-/// already holds data, and rewrites recorded workspaces so the library follows
-/// the move.
-fn migrate_legacy_home_agent_dir_to(
+/// One-time adoption: move a previous agent directory (`~/.MatrixAgent` from
+/// pre-0.2.6 installs, or the `agent\` directory an uninstalled previous
+/// install left behind) into the effective install-directory layout. Runs
+/// before the Host is spawned; refuses to clobber a target that already holds
+/// data, and rewrites recorded workspaces so the library follows the move.
+fn migrate_agent_dir_into(
     settings: &mut DesktopSettings,
     effective: &Path,
-    legacy: &Path,
+    previous: &Path,
     write: &dyn Fn(&DesktopSettings) -> Result<(), String>,
 ) -> Result<bool, String> {
-    if same_path(effective, legacy) || !legacy.exists() {
+    if same_path(effective, previous) || !previous.exists() {
         return Ok(false);
     }
     if effective.exists() {
         if !directory_is_empty(effective) {
-            // Already adopted (or genuinely in use) — keep the target.
-            return Ok(false);
+            // Occupied. Take over only when the occupant is a contentless
+            // stub (e.g. seeds written by a brief trial install that was
+            // uninstalled) while the incoming agent dir carries the user's
+            // real data; otherwise keep both sides untouched.
+            if !agent_dir_is_contentless_stub(effective) || !agent_dir_has_user_data(previous) {
+                // Already adopted (or genuinely in use) — keep the target.
+                return Ok(false);
+            }
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|since| since.as_millis())
+                .unwrap_or_default();
+            let stub_name = effective
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("agent");
+            let aside = effective.with_file_name(format!("{stub_name}.stale-{timestamp}"));
+            fs::rename(effective, &aside).map_err(|error| {
+                format!(
+                    "set aside stub agent dir {} -> {}: {error}",
+                    effective.display(),
+                    aside.display()
+                )
+            })?;
+        } else {
+            fs::remove_dir(effective).map_err(|error| {
+                format!("clear empty agent dir {}: {error}", effective.display())
+            })?;
         }
-        fs::remove_dir(effective)
-            .map_err(|error| format!("clear empty agent dir {}: {error}", effective.display()))?;
     }
-    relocate_directory(legacy, effective)?;
-    // The moved matrix-settings.json still points at the legacy library, and
+    relocate_directory(previous, effective)?;
+    // The moved matrix-settings.json still points at the previous library, and
     // recorded workspaces still name it; retarget both onto the new layout.
-    let legacy_library = legacy.join(DEFAULT_PROJECT_DIR_NAME);
+    let previous_library = previous.join(DEFAULT_PROJECT_DIR_NAME);
     let library = effective.join(DEFAULT_PROJECT_DIR_NAME);
-    seed_matrix_library_root(effective, &library, Some(&legacy_library))?;
-    rewrite_workspace_path(settings, &legacy_library, &library);
+    seed_matrix_library_root(effective, &library, Some(&previous_library))?;
+    rewrite_workspace_path(settings, &previous_library, &library);
     write(settings)?;
     Ok(true)
 }
@@ -724,6 +786,171 @@ fn rewrite_workspace_path(settings: &mut DesktopSettings, from: &Path, to: &Path
     {
         settings.known_workspaces.insert(0, to_s);
     }
+}
+
+/// The agent directory a recorded default library belongs to, when that
+/// library names a previous layout of this app: the default library always
+/// lives at `<agentDir>/library`, so a `library` entry whose parent holds
+/// this app's `matrix-settings.json` (or the legacy home layout) identifies
+/// an agent directory written by an earlier install. Returns `None` for a
+/// custom agent dir setting, the effective dir itself, and plain user
+/// workspaces.
+fn previous_agent_dir_from_workspace(
+    settings: &DesktopSettings,
+    effective: &Path,
+) -> Option<PathBuf> {
+    if settings.agent_dir.is_some() {
+        // A custom agent dir is in use — never relocate anything.
+        return None;
+    }
+    let current = first_configured_workspace(settings)?;
+    let workspace = Path::new(current.trim());
+    if workspace.file_name().and_then(|name| name.to_str()) != Some(DEFAULT_PROJECT_DIR_NAME) {
+        return None;
+    }
+    let agent_dir = workspace.parent()?;
+    if same_path(agent_dir, effective) || !is_recognized_agent_dir(agent_dir) {
+        return None;
+    }
+    Some(agent_dir.to_path_buf())
+}
+
+fn is_recognized_agent_dir(dir: &Path) -> bool {
+    dir.join("matrix-settings.json").exists() || same_path(dir, &legacy_home_agent_dir())
+}
+
+/// True when the agent directory holds no user-created data: no sessions, no
+/// credentials, and a library that contains only freshly-seeded content. Such
+/// a directory is left behind by an install that never got real use (its
+/// uninstall deliberately keeps runtime data).
+fn agent_dir_is_contentless_stub(dir: &Path) -> bool {
+    for marker in ["matrix-auth.json", "auth.json", "pi-auth.json"] {
+        if dir.join(marker).exists() {
+            return false;
+        }
+    }
+    if dir_has_any_file(&dir.join("sessions"))
+        || dir_has_any_file(&dir.join("provider-journal"))
+        || dir_has_any_file(&dir.join("attachments"))
+        || dir_has_any_file(&dir.join("model-backups"))
+    {
+        return false;
+    }
+    !library_has_user_content(&dir.join(DEFAULT_PROJECT_DIR_NAME))
+}
+
+fn agent_dir_has_user_data(dir: &Path) -> bool {
+    for marker in ["matrix-auth.json", "auth.json", "pi-auth.json"] {
+        if dir.join(marker).exists() {
+            return true;
+        }
+    }
+    dir_has_any_file(&dir.join("sessions"))
+        || dir_has_any_file(&dir.join("attachments"))
+        || dir_has_any_file(&dir.join("provider-journal"))
+        || library_has_user_content(&dir.join(DEFAULT_PROJECT_DIR_NAME))
+}
+
+/// Any file anywhere below `dir`. A missing directory holds no data; other
+/// inspection errors lean conservative (“has data”) so callers never destroy
+/// what they cannot read.
+fn dir_has_any_file(dir: &Path) -> bool {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return false,
+        Err(_) => return true,
+    };
+    for entry in entries.flatten() {
+        match entry.file_type() {
+            Ok(file_type) if file_type.is_dir() => {
+                if dir_has_any_file(&entry.path()) {
+                    return true;
+                }
+            }
+            Ok(_) => return true,
+            Err(_) => return true,
+        }
+    }
+    false
+}
+
+/// Seed content is exactly what the first Host start writes: AGENTS.md plus
+/// empty `notes/`, `reviews/`, and `.sync/` directories. Anything else —
+/// papers at the library root, note bodies, sync state — is user data.
+fn library_has_user_content(library: &Path) -> bool {
+    let entries = match fs::read_dir(library) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return false,
+        // Unreadable — assume the worst so callers never evict real data.
+        Err(_) => return true,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let is_seed_dir = matches!(name.as_ref(), "notes" | "reviews" | ".sync");
+        if !is_seed_dir && name.as_ref() != "AGENTS.md" {
+            return true;
+        }
+        let seeded = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_seed_dir && seeded && dir_has_any_file(&entry.path()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Retire recorded workspaces that name the default library of a previous
+/// agent-directory layout and no longer exist on disk (the data followed a
+/// migration or went away with an uninstall). Without this, reinstalling the
+/// app to a new directory accumulates dead `library` entries next to the
+/// current default. Live directories are never touched — the user can still
+/// remove those from the workspace picker.
+fn purge_dead_previous_default_workspaces(
+    settings: &mut DesktopSettings,
+    effective_agent_dir: &Path,
+) -> bool {
+    let home_agent = legacy_home_agent_dir();
+    let is_dead_previous_default = |entry: &str| -> bool {
+        let path = Path::new(entry.trim());
+        if path.file_name().and_then(|name| name.to_str()) != Some(DEFAULT_PROJECT_DIR_NAME) {
+            return false;
+        }
+        let Some(agent_dir) = path.parent() else {
+            return false;
+        };
+        if same_path(agent_dir, effective_agent_dir) {
+            return false;
+        }
+        let recognized =
+            agent_dir.join("matrix-settings.json").exists() || same_path(agent_dir, &home_agent);
+        recognized && !path.exists()
+    };
+
+    let mut changed = false;
+    let before = settings.known_workspaces.len();
+    settings
+        .known_workspaces
+        .retain(|entry| !is_dead_previous_default(entry));
+    changed |= settings.known_workspaces.len() != before;
+    if settings
+        .default_workspace
+        .as_deref()
+        .is_some_and(&is_dead_previous_default)
+    {
+        settings.default_workspace = None;
+        changed = true;
+    }
+    if settings
+        .last_workspace
+        .as_deref()
+        .is_some_and(is_dead_previous_default)
+    {
+        settings.last_workspace = None;
+        // The recorded session lived inside the retired workspace.
+        settings.last_session_path = None;
+        changed = true;
+    }
+    changed
 }
 
 fn copy_dir_all(source: &Path, dest: &Path) -> Result<(), String> {
@@ -1344,12 +1571,11 @@ mod tests {
         store.settings.known_workspaces = vec![legacy_library.to_string_lossy().into_owned()];
 
         let writes = std::cell::RefCell::new(0u32);
-        let migrated =
-            migrate_legacy_home_agent_dir_to(&mut store.settings, &effective, &legacy, &|_| {
-                *writes.borrow_mut() += 1;
-                Ok(())
-            })
-            .unwrap();
+        let migrated = migrate_agent_dir_into(&mut store.settings, &effective, &legacy, &|_| {
+            *writes.borrow_mut() += 1;
+            Ok(())
+        })
+        .unwrap();
         assert!(migrated);
         assert!(!legacy.exists());
         let new_paper = effective.join("library").join("2024 - Paper A.md");
@@ -1384,11 +1610,211 @@ mod tests {
 
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         let migrated =
-            migrate_legacy_home_agent_dir_to(&mut store.settings, &effective, &legacy, &|_| Ok(()))
-                .unwrap();
+            migrate_agent_dir_into(&mut store.settings, &effective, &legacy, &|_| Ok(())).unwrap();
         assert!(!migrated);
         assert!(legacy.exists());
         assert!(effective.join("library").join("new.md").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn adopts_a_previous_install_agent_dir_pointed_at_by_the_workspace() {
+        let dir = test_dir("adopt-previous-install");
+        let previous = dir.join("old-install").join("agent");
+        let previous_library = previous.join("library");
+        fs::create_dir_all(&previous_library).unwrap();
+        fs::write(previous_library.join("2024 - Paper A.md"), "# A").unwrap();
+        fs::write(
+            previous.join("matrix-settings.json"),
+            serde_json::json!({ "libraryRoot": previous_library.to_string_lossy() }).to_string(),
+        )
+        .unwrap();
+        let effective = dir.join("new-install").join("agent");
+
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store.settings.last_workspace = Some(previous_library.to_string_lossy().into_owned());
+        store.settings.known_workspaces = vec![previous_library.to_string_lossy().into_owned()];
+
+        let mut next = store.settings.clone();
+        let migrated =
+            migrate_agent_dir_into(&mut next, &effective, &previous, &|_| Ok(())).unwrap();
+        assert!(migrated);
+        assert!(!previous.exists());
+        let adopted_paper = effective.join("library").join("2024 - Paper A.md");
+        assert!(adopted_paper.exists());
+        let expected_library = effective.join("library").to_string_lossy().into_owned();
+        assert_eq!(
+            next.last_workspace.as_deref(),
+            Some(expected_library.as_str())
+        );
+        assert_eq!(next.known_workspaces, vec![expected_library]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn evicts_a_contentless_stub_agent_dir_for_real_previous_data() {
+        let dir = test_dir("evict-stub-agent-dir");
+        let previous = dir.join("old-install").join("agent");
+        let previous_library = previous.join("library");
+        fs::create_dir_all(&previous_library).unwrap();
+        fs::write(previous_library.join("2024 - Paper A.md"), "# A").unwrap();
+        fs::write(previous.join("matrix-settings.json"), "{}").unwrap();
+
+        // The target was left behind by a brief trial install: seeds only.
+        let effective = dir.join("new-install").join("agent");
+        let stub_library = effective.join("library");
+        fs::create_dir_all(stub_library.join("notes")).unwrap();
+        fs::create_dir_all(stub_library.join("reviews")).unwrap();
+        fs::create_dir_all(stub_library.join(".sync")).unwrap();
+        fs::write(stub_library.join("AGENTS.md"), "seeds").unwrap();
+        fs::write(effective.join("matrix-settings.json"), "{}").unwrap();
+
+        let mut next = DesktopSettings {
+            last_workspace: Some(previous_library.to_string_lossy().into_owned()),
+            ..DesktopSettings::default()
+        };
+        let migrated =
+            migrate_agent_dir_into(&mut next, &effective, &previous, &|_| Ok(())).unwrap();
+        assert!(migrated);
+        assert!(effective.join("library").join("2024 - Paper A.md").exists());
+        // The stub was set aside, not destroyed.
+        let evicted = fs::read_dir(dir.join("new-install"))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("agent.stale-")
+            })
+            .expect("stub agent dir should be renamed aside");
+        assert!(evicted.path().join("library").join("AGENTS.md").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_an_occupied_agent_dir_that_holds_real_data() {
+        let dir = test_dir("occupied-real-agent-dir");
+        let previous = dir.join("old-install").join("agent");
+        let previous_library = previous.join("library");
+        fs::create_dir_all(&previous_library).unwrap();
+        fs::write(previous_library.join("2024 - Paper A.md"), "# A").unwrap();
+        fs::write(previous.join("matrix-settings.json"), "{}").unwrap();
+
+        let effective = dir.join("new-install").join("agent");
+        fs::create_dir_all(effective.join("sessions")).unwrap();
+        fs::write(effective.join("sessions").join("live.jsonl"), "{}").unwrap();
+
+        let mut next = DesktopSettings {
+            last_workspace: Some(previous_library.to_string_lossy().into_owned()),
+            ..DesktopSettings::default()
+        };
+        let migrated =
+            migrate_agent_dir_into(&mut next, &effective, &previous, &|_| Ok(())).unwrap();
+        assert!(!migrated);
+        assert!(previous.exists());
+        assert!(effective.join("sessions").join("live.jsonl").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn discovery_only_names_previous_default_libraries() {
+        let dir = test_dir("discovery-previous-agent");
+        let effective = dir.join("install").join("agent");
+        let previous = dir.join("old-install").join("agent");
+        let previous_library = previous.join("library");
+        fs::create_dir_all(&previous_library).unwrap();
+        fs::write(previous.join("matrix-settings.json"), "{}").unwrap();
+
+        let mut settings = DesktopSettings {
+            last_workspace: Some(previous_library.to_string_lossy().into_owned()),
+            ..DesktopSettings::default()
+        };
+        assert_eq!(
+            previous_agent_dir_from_workspace(&settings, &effective),
+            Some(previous.clone())
+        );
+
+        // A plain user workspace is never adopted.
+        settings.last_workspace = Some("D:\\papers".into());
+        assert_eq!(
+            previous_agent_dir_from_workspace(&settings, &effective),
+            None
+        );
+        // An agent dir without this app's marker is never adopted.
+        let unmarked = dir.join("unmarked").join("agent");
+        settings.last_workspace = Some(unmarked.join("library").to_string_lossy().into_owned());
+        assert_eq!(
+            previous_agent_dir_from_workspace(&settings, &effective),
+            None
+        );
+        // The effective dir itself is never adopted.
+        settings.last_workspace = Some(effective.join("library").to_string_lossy().into_owned());
+        assert_eq!(
+            previous_agent_dir_from_workspace(&settings, &effective),
+            None
+        );
+        // A custom agent dir disables discovery entirely.
+        settings.agent_dir = Some("D:\\custom-agent".into());
+        settings.last_workspace = Some(previous_library.to_string_lossy().into_owned());
+        assert_eq!(
+            previous_agent_dir_from_workspace(&settings, &effective),
+            None
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn purges_dead_previous_default_workspaces_on_startup() {
+        let dir = test_dir("purge-dead-defaults");
+        let agent_dir = dir.join("install").join("agent");
+        let library = agent_dir.join("library");
+        let dead_agent = dir.join("old-install").join("agent");
+        fs::create_dir_all(&library).unwrap();
+        // Marker parent recognized, but the recorded library is gone.
+        fs::create_dir_all(&dead_agent).unwrap();
+        fs::write(dead_agent.join("matrix-settings.json"), "{}").unwrap();
+        let dead_library = dead_agent.join("library").to_string_lossy().into_owned();
+        let dead_library_value = dead_library.clone();
+        let live_library = library.to_string_lossy().into_owned();
+
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store.settings.agent_dir = Some(agent_dir.to_string_lossy().into_owned());
+        store.settings.last_workspace = Some(live_library.clone());
+        store.settings.last_session_path = Some("session.json".into());
+        store.settings.known_workspaces = vec![dead_library.clone(), live_library.clone()];
+
+        assert_eq!(store.ensure_default_project_workspace().unwrap(), None);
+        assert_eq!(store.settings.known_workspaces, vec![live_library.clone()]);
+        assert_eq!(
+            store.settings.last_workspace.as_deref(),
+            Some(live_library.as_str())
+        );
+        assert_eq!(
+            store.settings.last_session_path.as_deref(),
+            Some("session.json")
+        );
+
+        // When the active workspace itself is the dead entry, it is cleared
+        // and the recorded session goes with it; the next default library is
+        // reseeded so the app never starts without a workspace.
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store.settings.agent_dir = Some(agent_dir.to_string_lossy().into_owned());
+        store.settings.last_workspace = Some(dead_library);
+        store.settings.last_session_path = Some("session.json".into());
+        store.settings.known_workspaces = vec![dead_library_value];
+
+        let seeded = store.ensure_default_project_workspace().unwrap();
+        assert_eq!(seeded, Some(library.clone()));
+        assert_eq!(
+            store.settings.known_workspaces,
+            vec![library.to_string_lossy().into_owned()]
+        );
+        assert_eq!(
+            store.settings.last_workspace.as_deref(),
+            Some(library.to_string_lossy().as_ref())
+        );
+        assert_eq!(store.settings.last_session_path, None);
         fs::remove_dir_all(dir).unwrap();
     }
 
