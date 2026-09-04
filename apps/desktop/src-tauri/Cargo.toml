@@ -1,6 +1,6 @@
 [package]
 name = "pideck"
-version = "0.2.6"
+version = "0.2.7"
 description = "PaperMatrix"
 authors = ["PaperMatrix"]
 edition = "2021"
