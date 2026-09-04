@@ -57,6 +57,7 @@ export function parseArgs(argv) {
     mergeRemote: true,
     python: process.platform === "win32" ? "python" : "python3",
     allowDirty: false,
+    keyPassword: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
@@ -74,6 +75,7 @@ export function parseArgs(argv) {
     else if (value === "--no-deploy") args.deploy = false;
     else if (value === "--no-merge-remote") args.mergeRemote = false;
     else if (value === "--allow-dirty") args.allowDirty = true;
+    else if (value === "--key-password") args.keyPassword = next();
     else fail(`unknown argument: ${value}`);
   }
   return args;
@@ -136,16 +138,41 @@ function assertCleanTree(allowDirty) {
   }
 }
 
-function ensureUpdaterKey() {
+/**
+ * Ensure the updater signing material is usable without interactive prompts.
+ * Encrypted (rsign) keys require TAURI_SIGNING_PRIVATE_KEY_PASSWORD — without
+ * it tauri build hangs waiting on a password prompt that never gets input.
+ */
+export function ensureUpdaterKey(rootDir = root) {
   if (process.env.TAURI_SIGNING_PRIVATE_KEY) return;
-  const keyPath = join(root, "apps/desktop/src-tauri/.tauri-updater.key");
+  const keyPath = join(rootDir, "apps/desktop/src-tauri/.tauri-updater.key");
   if (!existsSync(keyPath)) {
     fail(
       "TAURI_SIGNING_PRIVATE_KEY is not set and apps/desktop/src-tauri/.tauri-updater.key is missing — the updater bundle cannot be signed",
     );
   }
-  process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyPath, "utf8");
-  info("loaded updater signing key from .tauri-updater.key");
+  const keyContent = readFileSync(keyPath, "utf8");
+  // Key files store a base64'd comment line; decoding it reveals whether the
+  // key is rsign-encrypted ("...rsign encrypted secret key").
+  let encrypted = false;
+  try {
+    const firstLine = keyContent.split(/\r?\n/, 1)[0] ?? "";
+    const decoded = Buffer.from(firstLine, "base64").toString("utf8");
+    encrypted = /rsign encrypted|minisign encrypted/i.test(decoded);
+  } catch {
+    encrypted = false;
+  }
+  if (encrypted && !process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+    fail(
+      "the updater key is password-protected — set TAURI_SIGNING_PRIVATE_KEY_PASSWORD (or pass --key-password)",
+    );
+  }
+  process.env.TAURI_SIGNING_PRIVATE_KEY = keyContent;
+  info(
+    encrypted
+      ? "loaded password-protected updater signing key from .tauri-updater.key"
+      : "loaded updater signing key from .tauri-updater.key",
+  );
 }
 
 function stagedAssetsDir() {
@@ -269,6 +296,9 @@ async function runRelease(argv) {
     );
   }
   assertCleanTree(args.allowDirty);
+  if (args.keyPassword && !process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = args.keyPassword;
+  }
   ensureUpdaterKey();
 
   const staging = join(root, "apps/desktop/src-tauri/target/release-staging");
