@@ -18,9 +18,15 @@ function fail(message) {
   throw new Error(`[generate-update-manifest] ${message}`);
 }
 
-function assertTagVersion(tag, version) {
-  if (!/^v\d/u.test(String(tag))) fail(`tag must look like v<semver>, got ${String(tag)}`);
-  if (tag !== `v${version}`) fail(`tag ${tag} does not match the packaged app version ${version}`);
+export function assertTagVersion(tag, version) {
+  // v* tags are Windows-only local releases; agent-v* tags are CI macOS
+  // releases. Both must carry the packaged app version.
+  if (!/^(?:agent-)?v\d/u.test(String(tag))) {
+    fail(`tag must look like v<semver> or agent-v<semver>, got ${String(tag)}`);
+  }
+  if (tag !== `v${version}` && tag !== `agent-v${version}`) {
+    fail(`tag ${tag} does not match the packaged app version ${version}`);
+  }
 }
 
 function assertRepo(repo) {

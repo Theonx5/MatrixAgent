@@ -84,7 +84,7 @@ Developer ID Application certificate plus notarization credentials.
 The tag-triggered release workflow builds Windows x64 and macOS arm64
 (Apple Silicon). It aggregates their accepted assets into one GitHub Draft
 Release. A follow-on `publish-to-server` job downloads those draft assets,
-runs `scripts/publish.py`, and rsyncs `latest.json` plus `v{version}/` to
+runs `scripts/assemble-dist.mjs`, and rsyncs `latest.json` plus `v{version}/` to
 `DEPLOY_DIST_DIR` so clients can fetch
 `https://papermatrix.online/api/updates/matrix-agent/latest.json` without
 GitHub. Intel macOS is not built. The Apple credential set is all-or-nothing:
@@ -102,11 +102,11 @@ sets `dual=true` and the CI workflow builds both platforms; patch tags set
 `dual=false`, skip the whole CI workflow, and are released from the release
 machine instead (see "Local Windows-only release" below).
 
-`.github/workflows/release.yml` checks out the release tag and records
-`git rev-parse HEAD`. The Windows job runs `pnpm verify:p0` on that
-revision (the same source gate as pull-request CI). macOS jobs run
-`pnpm verify:quick && pnpm build`; they do not rerun the Windows-oriented
-Rust lane. `cargo test` may rewrite tracked Tauri files under
+`.github/workflows/release.yml` is the macOS track only: it fires on
+`agent-v*` tags (Windows releases ship from the release machine via
+`pnpm release:local` and never enter CI). It checks out the release tag and
+records `git rev-parse HEAD`, then runs `pnpm verify:quick && pnpm build`
+on macOS. `cargo test` may rewrite tracked Tauri files under
 `apps/desktop/src-tauri/gen/`; the workflow restores those files, and
 `package:release` also ignores that generated prefix when checking that
 the checkout still matches the recorded commit.
@@ -126,7 +126,7 @@ on the deploy server, and `DEPLOY_SERVER_HOST` / `DEPLOY_SERVER_USER` /
     pnpm release:local --tag vX.Y.Z --notes "..."
 
 The script builds the NSIS installer with the tag-injected version, stages the
-updater bundle, assembles `artifacts/release-dist` via `scripts/publish.py`,
+updater bundle, assembles `artifacts/release-dist` via `scripts/assemble-dist.mjs`,
 merges the live macOS platform entry so macOS clients keep their current
 update channel, uploads `latest.json` and the new version directory over
 SSH (additive only — old version directories are never deleted), and

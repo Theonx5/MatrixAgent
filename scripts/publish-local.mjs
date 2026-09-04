@@ -48,14 +48,14 @@ export function parseArgs(argv) {
     notes: "",
     base: "https://papermatrix.online",
     target: join(root, "artifacts", "release-dist"),
-    server: process.env.DEPLOY_SERVER_HOST ?? null,
-    user: process.env.DEPLOY_SERVER_USER ?? null,
+    server: process.env.DEPLOY_SERVER_HOST ?? "192.168.3.13",
+    user: process.env.DEPLOY_SERVER_USER ?? "theonx",
     port: process.env.DEPLOY_SSH_PORT ?? "22",
-    distDir: process.env.DEPLOY_DIST_DIR ?? null,
+    distDir:
+      process.env.DEPLOY_DIST_DIR ?? "/home/theonx/servers-PaperDownload-prod/matrix-agent_dist",
     skipBuild: false,
     deploy: true,
     mergeRemote: true,
-    python: process.platform === "win32" ? "python" : "python3",
     allowDirty: false,
     keyPassword: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? null,
   };
@@ -70,7 +70,6 @@ export function parseArgs(argv) {
     else if (value === "--user") args.user = next();
     else if (value === "--port") args.port = next();
     else if (value === "--dist-dir") args.distDir = next();
-    else if (value === "--python") args.python = next();
     else if (value === "--skip-build") args.skipBuild = true;
     else if (value === "--no-deploy") args.deploy = false;
     else if (value === "--no-merge-remote") args.mergeRemote = false;
@@ -99,18 +98,6 @@ export function readAppVersion(rootDir = root) {
     fail(`tauri.conf.json has no valid version field: ${String(version)}`);
   }
   return version;
-}
-
-/**
- * Merge platform entries from the live update feed so a Windows-only local
- * release keeps serving the last dual-platform macOS build to macOS clients.
- */
-export function mergeRemotePlatforms(latest, local) {
-  const merged = { ...local.platforms };
-  for (const [platform, entry] of Object.entries(latest?.platforms ?? {})) {
-    if (!merged[platform]) merged[platform] = entry;
-  }
-  return { ...local, platforms: merged };
 }
 
 function run(label, command, args, options = {}) {
@@ -247,18 +234,6 @@ function selfCheck(base, version) {
     fail(`self check: latest.json does not report version ${version} yet`);
   }
   info(`publish OK: ${version}`);
-}
-
-async function fetchLiveLatestJson(base) {
-  try {
-    const response = await fetch(`${base}/api/updates/matrix-agent/latest.json`, {
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) return null;
-    return (await response.json()) ?? null;
-  } catch {
-    return null;
-  }
 }
 
 async function main() {

@@ -2,11 +2,11 @@ name: Release desktop installers
 
 on:
   push:
-    tags: ["v*", "agent-v*"]
+    tags: ["agent-v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v0.1.1)"
+        description: "Existing tag to release (e.g. agent-v0.3.0)"
         required: true
 
 permissions:
@@ -21,58 +21,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  meta:
-    name: Release channel
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      dual: ${{ steps.decide.outputs.dual }}
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-      - name: Decide dual-platform vs Windows-only
-        id: decide
-        shell: bash
-        run: |
-          set -euo pipefail
-          current="${RELEASE_TAG#v}"
-          # Previous version tag by semver order (ignores the tag being built).
-          previous_tag="$(git tag --sort=-v:refname 'v*' | grep -v "^${RELEASE_TAG}$" | head -1 || true)"
-          previous="${previous_tag#v}"
-          if [[ -z "$previous" ]]; then
-            echo "No previous version tag found — treating as a major release."
-            echo "dual=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          current_minor="${current%.*}"
-          previous_minor="${previous%.*}"
-          if [[ "$current_minor" != "$previous_minor" ]]; then
-            echo "${current} changes major.minor vs ${previous} — dual-platform CI build."
-            echo "dual=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "${current} is a patch over ${previous} — Windows-only local release; CI build skipped."
-            echo "dual=false" >> "$GITHUB_OUTPUT"
-          fi
-
   build-release:
-    name: Build ${{ matrix.label }}
-    needs: meta
-    if: needs.meta.outputs.dual == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: windows-x64
-            label: Windows x64
-            runner: windows-2022
-          - id: macos-arm64
-            label: macOS Apple Silicon
-            runner: macos-15
-    runs-on: ${{ matrix.runner }}
+    name: Build macOS Apple Silicon
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -156,11 +107,7 @@ jobs:
           commit="$(git rev-parse HEAD)"
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
           echo "Verified source commit ${commit} for tag ${RELEASE_TAG}"
-      - name: Verify Windows source gate
-        if: runner.os == 'Windows'
-        run: pnpm verify:p0
       - name: Verify macOS JavaScript source
-        if: runner.os == 'macOS'
         run: pnpm verify:quick && pnpm build
       - name: Restore files generated during verify
         shell: bash
@@ -169,26 +116,6 @@ jobs:
           git status --porcelain || true
           git restore --worktree --source=HEAD -- .
           git status --porcelain || true
-      - name: Detect SignPath
-        if: runner.os == 'Windows'
-        id: signpath
-        shell: bash
-        env:
-          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-          SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          SIGNPATH_PROJECT_SLUG: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
-          SIGNPATH_SIGNING_POLICY_SLUG: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
-        run: |
-          set -euo pipefail
-          if [[ -n "$SIGNPATH_API_TOKEN" && -n "$SIGNPATH_ORGANIZATION_ID" ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "project_slug=${SIGNPATH_PROJECT_SLUG:-matrix-agent}" >> "$GITHUB_OUTPUT"
-            echo "policy_slug=${SIGNPATH_SIGNING_POLICY_SLUG:-release-signing}" >> "$GITHUB_OUTPUT"
-            echo "PIDECK_SKIP_WINDOWS_AUTHENTICODE=1" >> "$GITHUB_ENV"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "SignPath secrets are not set; Windows installer will stay self-signed."
-          fi
       - name: Package from the verified source commit
         env:
           PIDECK_VERIFIED_SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
@@ -196,38 +123,6 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           PIDECK_WINDOWS_CERT_THUMBPRINT: ${{ secrets.PIDECK_WINDOWS_CERT_THUMBPRINT }}
         run: pnpm package:release
-      - name: Stage unsigned Windows installer
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          installer="$(node --input-type=module -e "import { readFileSync } from 'node:fs'; const m = JSON.parse(readFileSync('apps/desktop/src-tauri/target/release-staging/PACKAGE_RELEASE.json', 'utf8')); process.stdout.write(m.sourceInstaller)")"
-          mkdir -p unsigned-windows
-          cp "$installer" unsigned-windows/
-      - name: Upload unsigned Windows installer
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        id: unsigned-windows
-        uses: actions/upload-artifact@v7
-        with:
-          name: unsigned-windows-installer
-          path: unsigned-windows
-          if-no-files-found: error
-          retention-days: 1
-      - name: Sign Windows installer with SignPath
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ steps.signpath.outputs.project_slug }}
-          signing-policy-slug: ${{ steps.signpath.outputs.policy_slug }}
-          github-artifact-name: unsigned-windows-installer
-          wait-for-completion: true
-          output-artifact-directory: signed-windows
-      - name: Bind SignPath signature into the updater feed
-        if: runner.os == 'Windows' && steps.signpath.outputs.enabled == 'true'
-        shell: bash
-        run: node scripts/apply-windows-signpath.mjs --signed-dir signed-windows
       - name: Confirm package manifest source commit
         shell: bash
         run: |
@@ -260,8 +155,7 @@ jobs:
 
   create-release:
     name: Create draft release
-    needs: [meta, build-release]
-    if: ${{ !cancelled() && needs.meta.outputs.dual == 'true' && needs.build-release.result == 'success' }}
+    needs: build-release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -301,8 +195,7 @@ jobs:
 
   publish-to-server:
     name: Publish updater feed to papermatrix.online
-    needs: [meta, create-release]
-    if: ${{ !cancelled() && needs.meta.outputs.dual == 'true' && needs.create-release.result == 'success' }}
+    needs: create-release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -319,11 +212,12 @@ jobs:
         run: |
           mkdir -p artifacts
           gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -D artifacts
-      - name: Assemble dist (latest.json + version dir)
+      - name: Assemble dist (per-platform latest.json merge)
         run: |
-          python3 scripts/publish.py \
+          node scripts/assemble-dist.mjs \
             --artifacts artifacts \
-            --version "${RELEASE_TAG#v}" \
+            --version "${RELEASE_TAG#agent-v}" \
+            --platform darwin-aarch64 \
             --base-url "https://papermatrix.online" \
             --target dist \
             --notes "PaperMatrix ${RELEASE_TAG}"
@@ -339,6 +233,6 @@ jobs:
           rsync -avz -e "ssh -p $SSH_PORT" dist/ "${{ secrets.DEPLOY_SERVER_USER }}@${{ secrets.DEPLOY_SERVER_HOST }}:${{ secrets.DEPLOY_DIST_DIR }}/"
       - name: Self check
         run: |
-          VERSION="${RELEASE_TAG#v}"
+          VERSION="${RELEASE_TAG#agent-v}"
           curl -fsS "https://papermatrix.online/api/updates/matrix-agent/latest.json" | grep -q "\"version\": \"$VERSION\""
           echo "publish OK: $VERSION"

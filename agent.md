@@ -87,89 +87,73 @@ pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
 工作流名：`Release desktop installers`  
 配套：`.github/workflows/p0.yml` 在每次 `main` push / PR 上跑源码门。
 
-### 两条发布轨道
+### 两条独立轨道
 
-| 轨道 | 适用 | 平台 | 执行者 |
+| 轨道 | 触发 | 平台 | 执行者 |
 | --- | --- | --- | --- |
-| 本地直发 | **patch**（0.2.6 → 0.2.7，major.minor 不变） | 仅 Windows x64 | 本机 `pnpm release:local`，SSH 直发服务器 |
-| CI 双平台 | **大版本**（major.minor 变化，如 0.3.0 / 1.0.0） | Windows + macOS | GitHub Actions `Release desktop installers` |
+| Windows（高频） | 本地运行 `pnpm release:local --tag v0.2.9` | 仅 Windows x64 | 本机构建 + SSH 直发服务器 |
+| macOS（低频、必要时） | 推送 `agent-v*` tag（如 `agent-v0.3.0`） | 仅 macOS Apple Silicon | GitHub Actions |
 
-`release.yml` 开头的 `meta` job 比较当前 tag 与上一个版本 tag 的 major.minor：
-相同 → `dual=false`，CI 构建全部跳过（此时用本地直发）；不同 → `dual=true`，
-照常双平台构建、Draft Release 并回流服务器。
+两平台版本号**独立演进**（如 win 0.3.1、mac 0.3.0）。服务端 latest.json 是
+按平台合并的多平台清单：每个平台条目自带 `version`/`notes`，顶层 version
+只是各平台最大值（不参与单平台更新判定）。客户端 updater 端点使用 Tauri
+动态端点（`latest.json?target={{target}}&arch={{arch}}`），服务端按参数返回
+**单平台**清单；不带参数返回整份清单（兼容旧行为）；指定平台无条目返回
+204。**前提**：服务端按参数过滤的逻辑须先发版上线——验证：
 
-### 本地直发（patch，Windows-only）
+```bash
+curl 'https://papermatrix.online/api/updates/matrix-agent/latest.json?target=windows&arch=x86_64'
+# 应返回单平台清单；返回整份说明服务端新逻辑未上线（客户端仍可用，退回旧行为）
+```
 
-前置（一次性）：本机 `apps/desktop/src-tauri/.tauri-updater.key`（已 gitignore）、
-Python 3 在 PATH、SSH 私钥已加到发布服务器，并设置
-`DEPLOY_SERVER_HOST` / `DEPLOY_SERVER_USER` / `DEPLOY_DIST_DIR`
-（可选 `DEPLOY_SSH_PORT`），或用等价 CLI 参数 `--server/--user/--dist-dir/--port`。
+### 本地直发（Windows，v* tag）
+
+前置（一次性）：
+
+- 本机 `apps/desktop/src-tauri/.tauri-updater.key`（已 gitignore）。密钥
+  rsign 加密，须设置**用户级**环境变量 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+  （或运行时 `--key-password`）。CI 与本地必须用同一把私钥签名。
+- Python 3 在 PATH（部分脚本仍用）。
+- SSH 直发目标（CLI 或环境变量等价）：`DEPLOY_SERVER_HOST=192.168.3.13`、
+  `DEPLOY_SERVER_USER=theonx`、
+  `DEPLOY_DIST_DIR=/home/theonx/servers-PaperDownload-prod/matrix-agent_dist`、
+  `DEPLOY_SSH_PORT=22`；本机 SSH 私钥须已加入服务器 `authorized_keys`。
 
 ```bash
 # 1. 升版本文件（package.json / tauri.conf.json / Cargo.toml+lock / 各 package.json）并提交推送
-# 2. 打 tag（release.yml 对 patch tag 自动跳过 CI 构建，但 tag 仍用于溯源）
-git tag -a v0.2.7 -m "PaperMatrix 0.2.7" && git push origin v0.2.7
-# 3. 本地构建 + 装配 + SSH 直发 + 自检
-pnpm release:local --tag v0.2.7 --notes "修复说明"
+# 2. 打 v* tag（溯源用；CI 对 v* 不做任何事）
+git tag -a v0.2.9 -m "PaperMatrix 0.2.9" && git push origin v0.2.9
+# 3. 本地构建 + 按平台合并装配 + SSH 直发 + 自检
+pnpm release:local --tag v0.2.9 --notes "修复说明"
 ```
 
-`pnpm release:local` 依次执行：`package:release`（tag 注入版本，updater key 缺环境变量时
-自动读 `.tauri-updater.key`）→ `generate-update-manifest --stage-platform` →
-`publish.py` 装配 `artifacts/release-dist`（latest.json 指向 papermatrix.online）→
-合并远端 macOS 平台条目（Windows-only 发布不会打断 macOS 更新源）→
-`ssh`/`scp` 上传 `latest.json` 与新版本目录（只增不删）→ 自检 latest.json。
-追加 `--no-deploy` 只装配不上传，`--allow-dirty` 跳过脏工作区检查。
+`pnpm release:local` 执行链：`package:release`（tag 注入版本；updater key
+自动读 `.tauri-updater.key`，检测到加密 key 而无密码时快速报错）→
+`generate-update-manifest --stage-platform` → `assemble-dist.mjs`
+（**按平台合并**：只重写 `windows-x86_64` 条目，其余平台条目连同其
+version/notes/URL 原样保留；顶层 version 取各平台最大值）→ `ssh`/`scp`
+上传 `latest.json` 与新 `v{版本}/` 目录（只增不删）→ 自检 latest.json。
+`--no-deploy` 只装配不上传；`--skip-build` 复用上次构建产物；
+`--allow-dirty` 跳过脏工作区检查。
 
-无 SignPath 证书时本地构建的安装器没有 Authenticode 签名（updater 的 minisign
-签名不受影响，更新链路正常）；需要签名就在本机导出
-`WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD` / `PIDECK_WINDOWS_CERT_THUMBPRINT` 环境变量。
+无 Authenticode 证书时安装器不带系统签名（updater 的 minisign 链路不受
+影响）；需要签名就设置 `WINDOWS_CERTIFICATE` /
+`WINDOWS_CERTIFICATE_PASSWORD` / `PIDECK_WINDOWS_CERT_THUMBPRINT`。
 
-### CI 双平台（大版本）
+### CI macOS 发布（agent-v* tag）
 
-| 平台 | Runner | 产物 |
-| --- | --- | --- |
-| Windows x64 | `windows-2022` | NSIS `PaperMatrix_*_x64-setup.exe` + updater `.sig` |
-| macOS Apple Silicon | `macos-15` | DMG + `.app.tar.gz` updater |
-| Intel macOS | **不构建** | — |
+`release.yml` 仅响应 `agent-v*` tag 与手动 dispatch。macOS 作业跑
+`verify:quick && build` → `package:release`（darwin 分支产出 DMG +
+`.app.tar.gz` updater）→ `create-release`（Draft GitHub Release）→
+`publish-to-server`：`gh release download` 草稿资产后由
+`assemble-dist.mjs --platform darwin-aarch64` 按**同样的合并算法**只重写
+`darwin-aarch64` 条目（Windows 条目原样保留），`rsync`（不带 --delete）上传，
+`curl` 自检。两侧共用同一把 `.tauri-updater.key` 私钥。
 
-### 何时触发 CI
-
-- 推送 major/minor 变化的 tag：`v0.3.0`、`v1.0.0`、`agent-v1.2.0`
-- 或 Actions 页手动 `workflow_dispatch`，输入已有 tag
-- 打包时从 tag 抽出 semver，经 `tauri build --config` 注入应用版本，不改工作区文件
-- patch tag 推送：`meta` 判定 `dual=false`，整个 Release workflow 跳过（本地直发负责）
-
-同一 tag 的新 run 会取消旧 run（`cancel-in-progress: true`）。
-
-### 流水线在做什么
-
-每个平台 job：
-
-1. checkout **该 tag 指向的 commit**（不是当时的 `main`  tip，除非 tag 已跟上）。
-2. pnpm 9.15.0 + `.node-version` 的 Node + stable Rust。
-3. macOS：若 Repository secrets 里 Apple 证书七件套齐全，则 Developer ID
-   签名；一件都没有则 ad-hoc。缺几件会直接失败。
-4. **Windows 源码门** `pnpm verify:p0`（含 ESLint、knip、Prettier、测试、
-   `cargo fmt --check`、`clippy -D warnings`）。
-   **macOS** 只跑 `pnpm verify:quick && pnpm build`。
-5. `git restore` 掉 verify 期间生成的 Tauri schema 等文件。
-6. `pnpm package:release`（`PIDECK_VERIFIED_SOURCE_COMMIT` 必须等于 HEAD）。
-7. `scripts/generate-update-manifest.mjs --stage-platform` 收集本平台资产。
-8. 上传 artifact `release-platform-<id>`。
-
-`create-release` job（Ubuntu）在两个平台都成功后：
-
-1. 下载全部 platform artifact。
-2. 合成跨平台 `latest.json`。
-3. 创建或更新 **Draft** GitHub Release，标题 `PaperMatrix <tag>`。
-   不会自动 Publish。
-
-`publish-to-server` job（Ubuntu，`needs: create-release`）：
-
-1. `gh release download` 草稿资产。
-2. `scripts/publish.py` 装配 `latest.json` + `v{version}/`。
-3. `rsync` 到 `DEPLOY_DIST_DIR`（只增不删）。
-4. `curl` 自检 `https://papermatrix.online/api/updates/matrix-agent/latest.json`。
+流水线细节：checkout 该 tag 指向的 commit；Node 用 `.node-version`；
+Apple 证书七件套齐全则 Developer ID 签名，否则 ad-hoc；
+`package:release` 要求 `PIDECK_VERIFIED_SOURCE_COMMIT` 等于 HEAD；
+`generate-update-manifest --stage-platform` 接受 `v` 与 `agent-v` 前缀。
 
 ### Repository secrets
 
@@ -178,7 +162,7 @@ Settings → Secrets and variables → Actions → **Repository secrets**：
 | Secret | 是否必须 | 说明 |
 | --- | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | 必须 | 本机 `apps/desktop/src-tauri/.tauri-updater.key` **全文**（含 untrusted comment） |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 可空 | 私钥无密码就不要填，或填空 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 与密钥一致 | 加密密钥必填；两侧（CI/本地）必须同一把私钥 |
 | `APPLE_CERTIFICATE` | 正式 Mac 发布才要 | base64 的 Developer ID `.p12` |
 | `APPLE_CERTIFICATE_PASSWORD` | 同上 | |
 | `APPLE_SIGNING_IDENTITY` | 同上 | |
@@ -187,56 +171,37 @@ Settings → Secrets and variables → Actions → **Repository secrets**：
 | `DEPLOY_SERVER_HOST` | 同上 | 公网可达的 SSH 主机 |
 | `DEPLOY_SERVER_USER` | 同上 | 例如 `theonx` |
 | `DEPLOY_DIST_DIR` | 同上 | 例如 `/home/theonx/servers-PaperDownload-prod/matrix-agent_dist` |
-| `DEPLOY_SSH_PORT` | 可空 | 非 22 时填写，例如 frp 映射端口；缺省 22 |
+| `DEPLOY_SSH_PORT` | 可空 | 非 22 时填写；缺省 22 |
 
-公钥在 `apps/desktop/src-tauri/tauri.conf.json` 的
-`plugins.updater.pubkey`。客户端启动时向
-`https://papermatrix.online/api/updates/matrix-agent/latest.json` 查更新
-（Windows 静默安装；macOS 在没有 Developer ID 前不启用 updater）。
-`scripts/publish.py` 把 Draft Release 产物装配进该分发目录；URL 为
+公钥在 `apps/desktop/src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`；
+客户端 updater 端点为动态端点
+`latest.json?target={{target}}&arch={{arch}}`（Windows 静默安装；macOS 在
+没有 Developer ID 公证前 UI 不启用 updater）。dist 的 URL 形如
 `https://papermatrix.online/api/updates/matrix-agent/files/v{version}/...`。
 
 ### 发一版的步骤
 
 先升级版本文件（package.json、tauri.conf.json、apps/desktop/src-tauri/Cargo.toml
 +Cargo.lock、各 package.json）并提交——`generate-update-manifest` 校验
-tauri.conf.json 的 version 必须等于 tag。
+tauri.conf.json 的 version 必须等于 tag（`v` 与 `agent-v` 前缀均可）。
 
-**patch（Windows-only，本地直发）：**
-
-```bash
-git checkout main && git pull origin main
-pnpm format:changed && pnpm verify:quick
-git push origin main
-git tag -a v0.2.7 -m "PaperMatrix 0.2.7" && git push origin v0.2.7
-pnpm release:local --tag v0.2.7 --notes "..."
-```
-
-**大版本（Windows + macOS，CI 双平台）：**
+**Windows（本地直发）：**
 
 ```bash
 git checkout main && git pull origin main
 pnpm format:changed && pnpm verify:quick
 git push origin main
-# 等 P0 workflow 绿了再打 tag（CI 会重新全量验证）
-git tag -a v0.3.0 -m "PaperMatrix 0.3.0" && git push origin v0.3.0
+git tag -a v0.2.9 -m "PaperMatrix 0.2.9" && git push origin v0.2.9
+pnpm release:local --tag v0.2.9 --notes "..."
 ```
 
-然后打开 https://github.com/Theonx5/MatrixAgent/actions 看
-`Release desktop installers`。四个 job 都绿后，
-`curl -fsS https://papermatrix.online/api/updates/matrix-agent/latest.json`
-应出现本版本与 `windows-x86_64` / `darwin-aarch64`。Draft GitHub Release
-仍可人工核对，不必 Publish 草稿。
+**macOS（CI）：**
 
-已对外发布的 tag **不要** `git tag -f` / force-push。迭代未发布的 draft 才可以。
+```bash
+git checkout main && git pull origin main
+pnpm format:changed && pnpm verify:quick
+git push origin main
+git tag -a agent-v0.3.0 -m "PaperMatrix 0.3.0 (macOS)" && git push origin agent-v0.3.0
+# 在 Actions 页盯 Release desktop installers
+```
 
-### 代理改发布相关代码时
-
-- 改 `.github/workflows/`、`scripts/package-release*.mjs`、
-  `scripts/release-*.mjs`、`release-runtime.lock.json` 必须同步更新本节和
-  `docs/operations/release.md`。
-- 推送前至少跑 `pnpm format:changed` 和 `pnpm verify:quick`。
-- 新增未使用的 `export` 会被 knip 拦住；测试里的路径必须用
-  `pideck-data.ts` 的辅助函数，不要写死 `pideck/` 子目录。
-- Windows CI 对 Rust 执行 `cargo fmt --check` 和 `clippy -D warnings`。
-  本机没有 rustfmt 时，按 CI 日志里的 diff 改，或在能装 rustfmt 的环境格式化。
