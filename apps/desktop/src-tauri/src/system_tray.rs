@@ -97,7 +97,7 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
 }
 
 #[cfg(any(target_os = "windows", test))]
-fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+pub fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     use tauri::Manager;
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {

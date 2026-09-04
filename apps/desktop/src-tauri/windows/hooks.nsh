@@ -2,11 +2,12 @@
   DetailPrint "Closing PaperMatrix if it is running..."
   nsExec::Exec 'taskkill /F /IM PaperMatrix.exe /T'
   Pop $0
-  ; Previous Matrix Agent builds used pideck.exe only inside this install dir.
-  IfFileExists "$INSTDIR\pideck.exe" 0 skip_old_binary_close
-    nsExec::Exec 'taskkill /F /IM pideck.exe /T'
-    Pop $0
-  skip_old_binary_close:
+  ; Previous Matrix Agent builds (<=0.2.3) ran as pideck.exe. Kill by image
+  ; name unconditionally: the file may already be deleted from $INSTDIR
+  ; while a zombie process from the deleted image is still running, so
+  ; guarding the kill on IfFileExists would leave those processes alive.
+  nsExec::Exec 'taskkill /F /IM pideck.exe /T'
+  Pop $0
   Sleep 800
 
   IfFileExists "$INSTDIR\*.*" 0 skip_clear_readonly

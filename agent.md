@@ -157,6 +157,13 @@ frps → 本机 frpc → 本机 nginx:8090 → `127.0.0.1:9010`（prod uvicorn�
 no-cache 头（待 VPS 侧修复）。表现为发版后公网最长 15 分钟返回旧版本
 清单，过期自愈——不要在这个窗口内误判发布失败；紧急时可上 VPS 清缓存。
 
+客户端更新时序（0.2.8 起）：点击更新 → 插件拉起 NSIS 安装器（`/S /R
+/UPDATE /ARGS ...`）并退出应用 → 安装器 PREINSTALL 钩子无条件强制结束
+新旧二进制名的残留进程（PaperMatrix.exe / pideck.exe）→ 原位覆盖
+$INSTDIR → `/R` 重启。应用注册了 single-instance（按 identifier
+全局互斥）：任何副本（含旧版本残留的）再次启动只会聚焦已有窗口，
+不会叠加多个版本的窗口。
+
 ### 构建失败排查
 
 `package:release` 失败先看

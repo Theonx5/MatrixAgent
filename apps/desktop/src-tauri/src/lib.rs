@@ -27,6 +27,12 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin: the second launch of any copy of the app
+        // (old version, another install dir) exits and focuses this instance,
+        // so updated and stale copies never stack windows side by side.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            system_tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
