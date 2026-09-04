@@ -124,7 +124,9 @@ curl 'https://papermatrix.online/api/updates/matrix-agent/latest.json?target=win
 # 2. 打 v* tag（溯源用；CI 对 v* 不做任何事）
 git tag -a v0.2.9 -m "PaperMatrix 0.2.9" && git push origin v0.2.9
 # 3. 本地构建 + 按平台合并装配 + SSH 直发 + 自检
-pnpm release:local --tag v0.2.9 --notes "修复说明"
+#    非英文 notes 必须用 --notes-file（UTF-8 文件）：Windows 控制台代码页
+#    （GBK）会把命令行里的非 ASCII 参数损坏成乱码（0.2.7 曾因此发出乱码 notes）
+pnpm release:local --tag v0.2.9 --notes-file release-notes.txt
 ```
 
 `pnpm release:local` 执行链：`package:release`（tag 注入版本；updater key
@@ -192,7 +194,8 @@ git checkout main && git pull origin main
 pnpm format:changed && pnpm verify:quick
 git push origin main
 git tag -a v0.2.9 -m "PaperMatrix 0.2.9" && git push origin v0.2.9
-pnpm release:local --tag v0.2.9 --notes "..."
+# 非英文 notes 用 --notes-file（UTF-8）；--notes 仅适合纯 ASCII
+pnpm release:local --tag v0.2.9 --notes-file release-notes.txt
 ```
 
 **macOS（CI）：**

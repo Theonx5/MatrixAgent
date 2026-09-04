@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildDistManifest,
   classifyUpdateAsset,
   maxPlatformVersion,
   mergePlatformEntry,
+  readNotesFile,
   semverCompare,
 } from "./assemble-dist.mjs";
 
@@ -127,4 +131,30 @@ test("buildDistManifest rejects a staged dir without this platform's updater", (
       }),
     /missing|no updater/,
   );
+});
+
+test("readNotesFile reads UTF-8 notes and trims trailing newlines", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pideck-notes-"));
+  try {
+    const path = join(dir, "notes.txt");
+    writeFileSync(path, "发布管线改造：Windows 本地直发轨道上线\n", "utf8");
+    assert.equal(readNotesFile(path), "发布管线改造：Windows 本地直发轨道上线");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readNotesFile rejects missing and empty notes files", () => {
+  assert.throws(
+    () => readNotesFile(join(tmpdir(), "definitely-missing-notes.txt")),
+    /cannot read notes file/,
+  );
+  const dir = mkdtempSync(join(tmpdir(), "pideck-notes-"));
+  try {
+    const empty = join(dir, "empty.txt");
+    writeFileSync(empty, "  \n", "utf8");
+    assert.throws(() => readNotesFile(empty), /notes file is empty/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

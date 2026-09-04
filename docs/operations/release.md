@@ -123,7 +123,12 @@ Patch releases skip CI. On the Windows release machine (updater key at
 on the deploy server, and `DEPLOY_SERVER_HOST` / `DEPLOY_SERVER_USER` /
 `DEPLOY_DIST_DIR` env vars or the equivalent flags):
 
-    pnpm release:local --tag vX.Y.Z --notes "..."
+    pnpm release:local --tag vX.Y.Z --notes-file release-notes.txt
+
+Pass non-ASCII notes through `--notes-file` (a UTF-8 text file): the
+Windows console code page mangles non-ASCII CLI arguments before Node
+reads them, which shipped mojibake notes in 0.2.7. Plain-ASCII notes can
+still use `--notes "..."`.
 
 The script builds the NSIS installer with the tag-injected version, stages the
 updater bundle, assembles `artifacts/release-dist` via `scripts/assemble-dist.mjs`,

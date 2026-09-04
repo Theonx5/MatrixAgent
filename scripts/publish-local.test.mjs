@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ensureUpdaterKey, normalizeTag, readAppVersion } from "./publish-local.mjs";
+import { ensureUpdaterKey, normalizeTag, parseArgs, readAppVersion } from "./publish-local.mjs";
 
 test("normalizeTag accepts only v-prefixed semver tags", () => {
   assert.equal(normalizeTag("v0.2.7"), "v0.2.7");
@@ -8,6 +8,12 @@ test("normalizeTag accepts only v-prefixed semver tags", () => {
   assert.throws(() => normalizeTag("0.2.7"), /tag must look like/);
   assert.throws(() => normalizeTag("v0.2"), /tag must look like/);
   assert.throws(() => normalizeTag(undefined), /tag must look like/);
+});
+
+test("parseArgs accepts --notes-file for UTF-8 notes on the Windows release machine", () => {
+  const args = parseArgs(["--tag", "v0.2.8", "--notes-file", "notes.txt"]);
+  assert.equal(args.notesFile, "notes.txt");
+  assert.equal(args.notes, "");
 });
 
 test("readAppVersion reads the version the update feed validates against", () => {

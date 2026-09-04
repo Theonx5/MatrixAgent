@@ -41,6 +41,27 @@ function fail(message) {
   throw new AssembleDistError(message);
 }
 
+/** Read release notes from a UTF-8 file instead of a CLI argument.
+ *
+ * On the Windows release machine, non-ASCII text passed as a CLI argument
+ * gets mangled by the console code page (GBK) before it reaches Node, which
+ * is how 0.2.7 shipped mojibake notes. Notes files are read as UTF-8
+ * directly, so they are immune to the code page.
+ */
+export function readNotesFile(path) {
+  let content;
+  try {
+    content = readFileSync(path, "utf8");
+  } catch (error) {
+    fail(
+      `cannot read notes file ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const notes = content.trim();
+  if (!notes) fail(`notes file is empty: ${path}`);
+  return notes;
+}
+
 export function classifyUpdateAsset(name) {
   const lower = name.toLowerCase();
   if (lower.endsWith(".sig")) return null;
@@ -225,6 +246,7 @@ function parseCliArgs(argv) {
     baseUrl: "https://papermatrix.online",
     target: null,
     notes: "",
+    notesFile: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
@@ -235,6 +257,7 @@ function parseCliArgs(argv) {
     else if (value === "--base-url") args.baseUrl = next();
     else if (value === "--target") args.target = next();
     else if (value === "--notes") args.notes = next();
+    else if (value === "--notes-file") args.notesFile = next();
     else fail(`unknown argument: ${value}`);
   }
   if (!args.artifacts) fail("--artifacts is required");
@@ -262,7 +285,14 @@ async function readLiveLatest(baseUrl) {
 }
 
 async function main() {
-  const args = parseCliArgs(process.argv.slice(2));
+  const parsed = parseCliArgs(process.argv.slice(2));
+  if (parsed.notes && parsed.notesFile) {
+    fail("pass either --notes or --notes-file, not both");
+  }
+  const args = {
+    ...parsed,
+    notes: parsed.notesFile ? readNotesFile(parsed.notesFile) : parsed.notes,
+  };
   const live = await readLiveLatest(args.baseUrl);
   const pubDate = new Date().toISOString();
   const result = assembleDist({

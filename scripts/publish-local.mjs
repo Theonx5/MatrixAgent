@@ -7,15 +7,20 @@
  *   Actions "Release desktop installers" workflow builds Windows + macOS.
  *
  * Usage:
- *   node scripts/publish-local.mjs [--tag vX.Y.Z] [--notes "..."] [--skip-build]
+ *   node scripts/publish-local.mjs [--tag vX.Y.Z] [--notes "..."] [--notes-file path]
+ *        [--skip-build]
  *        [--base-url https://papermatrix.online] [--target artifacts/release-dist]
  *        [--server host] [--user name] [--port 22] [--dist-dir /path/on/server]
+ *
+ * Non-ASCII notes MUST go through --notes-file (UTF-8): the Windows console
+ * code page mangles non-ASCII CLI arguments before Node sees them.
  *
  * Deploy target resolution order: CLI flag > env (DEPLOY_SERVER_HOST /
  * DEPLOY_SERVER_USER / DEPLOY_DIST_DIR / DEPLOY_SSH_PORT) > ~/.ssh/config for
  * the host. Auth uses the local SSH agent / key, exactly like a manual ssh.
  */
 import { spawnSync } from "node:child_process";
+import { readNotesFile } from "./assemble-dist.mjs";
 import {
   existsSync,
   mkdirSync,
@@ -45,6 +50,7 @@ export function parseArgs(argv) {
   const args = {
     tag: null,
     notes: "",
+    notesFile: null,
     base: "https://papermatrix.online",
     target: join(root, "artifacts", "release-dist"),
     server: process.env.DEPLOY_SERVER_HOST ?? "192.168.3.13",
@@ -62,6 +68,7 @@ export function parseArgs(argv) {
     const next = () => argv[++index];
     if (value === "--tag") args.tag = next();
     else if (value === "--notes") args.notes = next();
+    else if (value === "--notes-file") args.notesFile = next();
     else if (value === "--base-url") args.base = next();
     else if (value === "--target") args.target = next();
     else if (value === "--server") args.server = next();
@@ -232,6 +239,10 @@ async function main() {
 
 async function runRelease(argv) {
   const args = parseArgs(argv);
+  if (args.notes && args.notesFile) {
+    fail("pass either --notes or --notes-file, not both");
+  }
+  if (args.notesFile) args.notes = readNotesFile(args.notesFile);
   const appVersion = readAppVersion();
   const tag = args.tag ? normalizeTag(args.tag) : `v${appVersion}`;
   if (args.tag && tag !== `v${appVersion}`) {
