@@ -17,9 +17,20 @@
  *   {target}/v{version}/<updater> + .sig       (updater entry)
  */
 
-import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PLATFORM_WINDOWS = "windows-x86_64";
 const PLATFORM_MACOS = "darwin-aarch64";
@@ -45,6 +56,37 @@ export function classifyUpdateAsset(name) {
 
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/**
+ * Windows-safe copy-over: writing straight onto an existing (possibly held)
+ * file raises EPERM — stage a temp copy, then rename, clearing the target
+ * with an unlink retry when needed (same pattern as the credential store).
+ */
+function copyFileAtomic(source, destination) {
+  const temp = `${destination}.${randomUUID()}.tmp`;
+  copyFileSync(source, temp);
+  try {
+    chmodSync(temp, 0o666);
+    renameSync(temp, destination);
+  } catch (error) {
+    const code = error?.code;
+    if (code === "EPERM" || code === "EEXIST") {
+      // A read-only attribute on the target blocks unlink on Windows — clear
+      // it before removing, then retry the atomic swap.
+      try {
+        chmodSync(destination, 0o666);
+      } catch {
+        /* nothing to clear */
+      }
+      rmSync(destination, { force: true });
+      chmodSync(temp, 0o666);
+      renameSync(temp, destination);
+      return;
+    }
+    rmSync(temp, { force: true });
+    throw error;
+  }
 }
 
 function assertAssetName(name, label) {
@@ -163,12 +205,84 @@ function assembleDist(options) {
   const { installers } = collectPlatformAssets(assetsDir);
   for (const installer of installers) {
     assertAssetName(installer.name, "installer");
-    copyFileSync(installer.path, join(versionDir, installer.name));
+    copyFileAtomic(installer.path, join(versionDir, installer.name));
   }
-  copyFileSync(entry.path, join(versionDir, entry.name));
-  copyFileSync(entry.signaturePath, join(versionDir, `${entry.name}.sig`));
+  copyFileAtomic(entry.path, join(versionDir, entry.name));
+  copyFileAtomic(entry.signaturePath, join(versionDir, `${entry.name}.sig`));
 
   const latestPath = join(target, "latest.json");
   writeFileSync(latestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  return { latestPath, versionDir, manifest };
+  return { latestPath, versionDir, manifest, target };
+}
+
+/** ---- CLI ---- */
+
+function parseCliArgs(argv) {
+  const args = {
+    artifacts: null,
+    version: null,
+    platform: null,
+    baseUrl: "https://papermatrix.online",
+    target: null,
+    notes: "",
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    const next = () => argv[++index];
+    if (value === "--artifacts") args.artifacts = next();
+    else if (value === "--version") args.version = next();
+    else if (value === "--platform") args.platform = next();
+    else if (value === "--base-url") args.baseUrl = next();
+    else if (value === "--target") args.target = next();
+    else if (value === "--notes") args.notes = next();
+    else fail(`unknown argument: ${value}`);
+  }
+  if (!args.artifacts) fail("--artifacts is required");
+  if (!args.version) fail("--version is required");
+  if (!args.platform) fail("--platform is required (windows-x86_64 | darwin-aarch64)");
+  if (!args.target) fail("--target is required");
+  return args;
+}
+
+/** Seed for the merge: the live feed, or null on first release / network loss. */
+async function readLiveLatest(baseUrl) {
+  try {
+    const response = await fetch(
+      `${baseUrl.replace(/\/$/, "")}/api/updates/matrix-agent/latest.json`,
+      {
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    return (await response.json()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function main() {
+  const args = parseCliArgs(process.argv.slice(2));
+  const live = await readLiveLatest(args.baseUrl);
+  const pubDate = new Date().toISOString();
+  const result = assembleDist({
+    version: args.version,
+    platform: args.platform,
+    assetsDir: resolve(args.artifacts),
+    baseUrl: args.baseUrl,
+    notes: args.notes,
+    pubDate,
+    live,
+    target: resolve(args.target),
+  });
+  console.log(`[assemble-dist] latest.json version ${result.manifest.version}`);
+  for (const [platform, entry] of Object.entries(result.manifest.platforms)) {
+    const label = entry.version ? `v${entry.version}` : "legacy entry (no version field)";
+    console.log(`[assemble-dist]   ${platform}: ${label} -> ${entry.url}`);
+  }
+  console.log(`[assemble-dist] dist assembled at ${result.target}`);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await main();
 }

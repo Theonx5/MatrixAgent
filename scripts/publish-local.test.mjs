@@ -15,20 +15,24 @@ test("readAppVersion reads the version the update feed validates against", () =>
   assert.match(version, /^\d+\.\d+\.\d+$/u);
 });
 
-test("ensureUpdaterKey refuses an encrypted key without a password", () => {
+test("ensureUpdaterKey defaults the password to an explicit empty string", () => {
   const previous = process.env.TAURI_SIGNING_PRIVATE_KEY;
   const previousPassword = process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
   delete process.env.TAURI_SIGNING_PRIVATE_KEY;
   delete process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
   try {
-    // The repository's real key is rsign-encrypted, so this must fail closed
-    // instead of letting tauri build hang on a password prompt.
-    assert.throws(() => ensureUpdaterKey(), /password-protected/);
+    // The release key is unencrypted; an UNSET password var makes tauri build
+    // stall on an interactive prompt, so the loader pins an explicit "".
+    ensureUpdaterKey();
+    assert.equal(process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD, "");
+    assert.ok(process.env.TAURI_SIGNING_PRIVATE_KEY?.startsWith("dW50cnVzdGVk"));
   } finally {
     if (previous !== undefined) process.env.TAURI_SIGNING_PRIVATE_KEY = previous;
     else delete process.env.TAURI_SIGNING_PRIVATE_KEY;
     if (previousPassword !== undefined) {
       process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = previousPassword;
+    } else {
+      delete process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
     }
   }
 });

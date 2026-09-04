@@ -10,7 +10,6 @@
  *   node scripts/publish-local.mjs [--tag vX.Y.Z] [--notes "..."] [--skip-build]
  *        [--base-url https://papermatrix.online] [--target artifacts/release-dist]
  *        [--server host] [--user name] [--port 22] [--dist-dir /path/on/server]
- *        [--no-deploy] [--no-merge-remote] [--python python]
  *
  * Deploy target resolution order: CLI flag > env (DEPLOY_SERVER_HOST /
  * DEPLOY_SERVER_USER / DEPLOY_DIST_DIR / DEPLOY_SSH_PORT) > ~/.ssh/config for
@@ -55,7 +54,6 @@ export function parseArgs(argv) {
       process.env.DEPLOY_DIST_DIR ?? "/home/theonx/servers-PaperDownload-prod/matrix-agent_dist",
     skipBuild: false,
     deploy: true,
-    mergeRemote: true,
     allowDirty: false,
     keyPassword: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? null,
   };
@@ -72,7 +70,6 @@ export function parseArgs(argv) {
     else if (value === "--dist-dir") args.distDir = next();
     else if (value === "--skip-build") args.skipBuild = true;
     else if (value === "--no-deploy") args.deploy = false;
-    else if (value === "--no-merge-remote") args.mergeRemote = false;
     else if (value === "--allow-dirty") args.allowDirty = true;
     else if (value === "--key-password") args.keyPassword = next();
     else fail(`unknown argument: ${value}`);
@@ -127,8 +124,10 @@ function assertCleanTree(allowDirty) {
 
 /**
  * Ensure the updater signing material is usable without interactive prompts.
- * Encrypted (rsign) keys require TAURI_SIGNING_PRIVATE_KEY_PASSWORD — without
- * it tauri build hangs waiting on a password prompt that never gets input.
+ * The release key is generated with an empty password, so the password env var
+ * defaults to an explicit empty string (an UNSET var makes tauri build wait on
+ * a password prompt that never receives input and stalls the release). If the
+ * key ever gets a real password, pass --key-password.
  */
 export function ensureUpdaterKey(rootDir = root) {
   if (process.env.TAURI_SIGNING_PRIVATE_KEY) return;
@@ -138,28 +137,11 @@ export function ensureUpdaterKey(rootDir = root) {
       "TAURI_SIGNING_PRIVATE_KEY is not set and apps/desktop/src-tauri/.tauri-updater.key is missing — the updater bundle cannot be signed",
     );
   }
-  const keyContent = readFileSync(keyPath, "utf8");
-  // Key files store a base64'd comment line; decoding it reveals whether the
-  // key is rsign-encrypted ("...rsign encrypted secret key").
-  let encrypted = false;
-  try {
-    const firstLine = keyContent.split(/\r?\n/, 1)[0] ?? "";
-    const decoded = Buffer.from(firstLine, "base64").toString("utf8");
-    encrypted = /rsign encrypted|minisign encrypted/i.test(decoded);
-  } catch {
-    encrypted = false;
+  if (process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD === undefined) {
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "";
   }
-  if (encrypted && !process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
-    fail(
-      "the updater key is password-protected — set TAURI_SIGNING_PRIVATE_KEY_PASSWORD (or pass --key-password)",
-    );
-  }
-  process.env.TAURI_SIGNING_PRIVATE_KEY = keyContent;
-  info(
-    encrypted
-      ? "loaded password-protected updater signing key from .tauri-updater.key"
-      : "loaded updater signing key from .tauri-updater.key",
-  );
+  process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyPath, "utf8");
+  info("loaded updater signing key from .tauri-updater.key (empty password)");
 }
 
 function stagedAssetsDir() {
@@ -296,12 +278,17 @@ async function runRelease(argv) {
   if (!existsSync(assets)) fail(`staged assets missing: ${assets}`);
   const distDir = resolve(args.target);
   mkdirSync(distDir, { recursive: true });
-  run("assemble dist (latest.json + version dir)", args.python, [
-    "scripts/publish.py",
+  // Per-platform merge assembly (两轨制): this release only rewrites
+  // windows-x86_64; every other platform entry in the live feed is carried
+  // over verbatim, and the top-level version is the max across platforms.
+  run("assemble dist (per-platform latest.json merge)", "node", [
+    "scripts/assemble-dist.mjs",
     "--artifacts",
     assets,
     "--version",
     version,
+    "--platform",
+    "windows-x86_64",
     "--base-url",
     args.base,
     "--target",
@@ -309,21 +296,6 @@ async function runRelease(argv) {
     "--notes",
     args.notes || `PaperMatrix ${tag}`,
   ]);
-
-  if (args.mergeRemote) {
-    const latestPath = join(distDir, "latest.json");
-    const local = JSON.parse(readFileSync(latestPath, "utf8"));
-    const live = await fetchLiveLatestJson(args.base);
-    if (live && live.version !== version) {
-      const merged = mergeRemotePlatforms(live, local);
-      writeFileSync(latestPath, `${JSON.stringify(merged, null, 2)}\n`);
-      info(
-        `merged remote platforms from ${live.version}: ${Object.keys(merged.platforms).join(", ")}`,
-      );
-    } else {
-      info("remote feed absent or already at this version — no platform merge needed");
-    }
-  }
 
   if (!args.deploy) {
     info(`--no-deploy: dist assembled at ${distDir}`);
