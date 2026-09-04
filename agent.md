@@ -99,7 +99,7 @@ pnpm verify:p0               # verify:quick + 构建 + Rust 测试 + clippy/fmt
 只是各平台最大值（不参与单平台更新判定）。客户端 updater 端点使用 Tauri
 动态端点（`latest.json?target={{target}}&arch={{arch}}`），服务端按参数返回
 **单平台**清单；不带参数返回整份清单（兼容旧行为）；指定平台无条目返回
-204。**前提**：服务端按参数过滤的逻辑须先发版上线——验证：
+204。服务端按参数过滤的逻辑已上线（0.2.7 实测返回单平台清单）。回归验证：
 
 ```bash
 curl 'https://papermatrix.online/api/updates/matrix-agent/latest.json?target=windows&arch=x86_64'
@@ -110,14 +110,16 @@ curl 'https://papermatrix.online/api/updates/matrix-agent/latest.json?target=win
 
 前置（一次性）：
 
-- 本机 `apps/desktop/src-tauri/.tauri-updater.key`（已 gitignore）。密钥
-  rsign 加密，须设置**用户级**环境变量 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-  （或运行时 `--key-password`）。CI 与本地必须用同一把私钥签名。
-- Python 3 在 PATH（部分脚本仍用）。
-- SSH 直发目标（CLI 或环境变量等价）：`DEPLOY_SERVER_HOST=192.168.3.13`、
-  `DEPLOY_SERVER_USER=theonx`、
-  `DEPLOY_DIST_DIR=/home/theonx/servers-PaperDownload-prod/matrix-agent_dist`、
-  `DEPLOY_SSH_PORT=22`；本机 SSH 私钥须已加入服务器 `authorized_keys`。
+- 本机 `apps/desktop/src-tauri/.tauri-updater.key`（已 gitignore）。0.2.7 起
+  密钥**无密码**（`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 需设为空串或运行时
+  `--key-password ""`，publish-local 已处理）；若换用加密密钥则须设置
+  **用户级**环境变量。CI 与本地必须用同一把私钥签名。
+- Python 3、`ssh`/`scp` 在 PATH。
+- SSH 直发目标已内置默认值（`publish-local.mjs`：`192.168.3.13` / `theonx` /
+  `/home/theonx/servers-PaperDownload-prod/matrix-agent_dist` / 端口 22），
+  可用 `DEPLOY_SERVER_HOST` / `DEPLOY_SERVER_USER` / `DEPLOY_DIST_DIR` /
+  `DEPLOY_SSH_PORT` 或 `--server/--user/--dist-dir/--port` 覆盖；本机 SSH
+  私钥须已加入服务器 `authorized_keys`。
 
 ```bash
 # 1. 升版本文件（package.json / tauri.conf.json / Cargo.toml+lock / 各 package.json）并提交推送
@@ -141,6 +143,39 @@ version/notes/URL 原样保留；顶层 version 取各平台最大值）→ `ssh
 无 Authenticode 证书时安装器不带系统签名（updater 的 minisign 链路不受
 影响）；需要签名就设置 `WINDOWS_CERTIFICATE` /
 `WINDOWS_CERTIFICATE_PASSWORD` / `PIDECK_WINDOWS_CERT_THUMBPRINT`。
+
+### 发布链路与缓存现状
+
+公网链路：`papermatrix.online`（云 nginx TLS 终结，39.106.159.243）→
+frps → 本机 frpc → 本机 nginx:8090 → `127.0.0.1:9010`（prod uvicorn）。
+后端每次请求实时读 `{DEPLOY_DIST_DIR}/latest.json` 并显式带
+`Cache-Control: no-cache`；本机 nginx 无缓存。后端路由若更新过
+（`backend/app/api/routes/tools.py`），发版前确认 prod uvicorn 已重启到
+新代码。
+
+**已知问题**：云 nginx 对 latest.json 仍有 ~10-15 分钟响应缓存且似乎忽略
+no-cache 头（待 VPS 侧修复）。表现为发版后公网最长 15 分钟返回旧版本
+清单，过期自愈——不要在这个窗口内误判发布失败；紧急时可上 VPS 清缓存。
+
+### 构建失败排查
+
+`package:release` 失败先看
+`apps/desktop/src-tauri/target/release-staging/PACKAGE_RELEASE.json`：
+`status` / `tauriExitCode` / `stageTimingsMs` / `packagedRuntimeErrors`
+定位挂在哪个阶段。注意它只有摘要，Tauri 构建的真实报错要用同样参数
+手跑一次抓输出：
+
+```bash
+cd apps/desktop
+node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis --config '{"version":"<版本>"}'
+```
+
+已知的 Rust 侧坑：Cargo.lock 里经 rsproxy 镜像生成的 checksum 可能与
+crates.io 官方不一致；镜像不可用（直连）后构建报
+`checksum ... changed between lock files`，且 `cargo update --precise`
+也会被同一校验挡住。修法：从官方 sparse index 查真实 checksum（如
+`https://index.crates.io/di/sp/displaydoc`，按 crate 名前缀分片），手改
+Cargo.lock 后 `cargo fetch` 验证（0.2.7 的 displaydoc 0.2.7 即此问题）。
 
 ### CI macOS 发布（agent-v* tag）
 
@@ -196,6 +231,24 @@ git push origin main
 git tag -a v0.2.9 -m "PaperMatrix 0.2.9" && git push origin v0.2.9
 # 非英文 notes 用 --notes-file（UTF-8）；--notes 仅适合纯 ASCII
 pnpm release:local --tag v0.2.9 --notes-file release-notes.txt
+```
+
+若打 tag 后还需修复：提交修复 → push main → 删除重建 tag 并强推
+（`git tag -d v0.2.9 && git push origin :refs/tags/v0.2.9` 后重建；CI 对
+v* 无副作用），再重跑 `release:local`。
+
+发布后自检（脚本里的校验值勿用内联中文字面量——Windows 本机 python/node
+的 CLI 参数同样会被代码页损坏，造成假阴性；用 UTF-8 字节匹配或从文件读）：
+
+```bash
+# 动态端点：version=本次版本、notes 与发布说明一致（单平台响应的 notes 取
+# 平台条目自身）、url 指向 v{版本}/、signature 非空
+curl -fsS 'https://papermatrix.online/api/updates/matrix-agent/latest.json?target=windows&arch=x86_64'
+# 安装包可达性（服务器不支持 HEAD，返回 405，用 range GET）
+curl -fsS -r 0-1023 -o /dev/null \
+  'https://papermatrix.online/api/updates/matrix-agent/files/v0.2.9/PaperMatrix_0.2.9_x64-setup.exe'
+# .sig 与本地产物一致
+diff <(curl -fsS .../PaperMatrix_0.2.9_x64-setup.exe.sig) <本地 .sig>
 ```
 
 **macOS（CI）：**
